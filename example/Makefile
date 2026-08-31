@@ -1,5 +1,5 @@
 # ==============================================================================
-# Makefile for the AXI4-Stream UVC self-test (scaffolded by uvm-tb).
+# Makefile for the AXI4-Stream UVC integration example.
 #
 # Usage:
 #   make                 compile, elaborate, and run TEST in batch mode
@@ -13,13 +13,10 @@
 #   TEST, SEED, UVM_VERBOSITY, WAVES, PLUSARGS, VIVADO_PATH
 #
 # Available tests (TEST=...):
-#   axi_stream_smoke_test         a little traffic, no backpressure
-#   axi_stream_multiwidth_test    all five widths, random backpressure  [default]
-#   axi_stream_backpressure_test  every built-in ready model, one per link
-#   axi_stream_no_ready_test      TREADY held low, then released
-#   axi_stream_sparse_test        null/position byte payloads
-#   axi_stream_reset_test         ARESETn pulsed mid-traffic
-#   make regress                  runs all of the above in turn
+#   example_base_test          random packets, 60% random backpressure  [default]
+#   example_backpressure_test  burst backpressure and a bursty source
+#   example_directed_test      a specific 21-byte payload on an 8-byte link
+#   make regress               runs all of the above in turn
 #
 # The UVC itself is compiled through $(UVC_FILELIST) -- the same drop-in
 # filelist another project would use -- so this build exercises the UVC's
@@ -29,8 +26,8 @@
 SHELL           := /bin/bash
 
 SIM             ?= xsim
-TOP             ?= axi_stream_tb_top
-TEST            ?= axi_stream_multiwidth_test
+TOP             ?= example_tb_top
+TEST            ?= example_base_test
 SEED            ?= random
 UVM_VERBOSITY   ?= UVM_MEDIUM
 FILELIST        ?= filelist.f
@@ -103,14 +100,9 @@ else
   $(error Unsupported SIM=$(SIM). Supported simulators: xsim)
 endif
 
-REGRESS_TESTS ?= axi_stream_smoke_test axi_stream_multiwidth_test \
-                 axi_stream_backpressure_test axi_stream_no_ready_test \
-                 axi_stream_sparse_test axi_stream_reset_test
+REGRESS_TESTS ?= example_base_test example_backpressure_test example_directed_test
 
-CHECK_TOP      ?= axi_stream_if_check_tb
-CHECK_SNAPSHOT ?= $(CHECK_TOP)_snap
-
-.PHONY: all compile elab run sim waves view gui clean help check-tools regress check-protocol
+.PHONY: all compile elab run sim waves view gui clean help check-tools regress
 
 # `make` on its own builds everything and runs the test to completion in
 # batch mode, failing the invocation if the test failed.
@@ -169,21 +161,10 @@ view:
 gui: elab
 	$(VIVADO_ENV) $(XSIM_BIN) $(SNAPSHOT) $(RUN_FLAGS) --gui $(if $(WAVE_CFG),--view $(WAVE_CFG))
 
-# Negative test for the interface's protocol assertions: breaks each rule
-# on purpose and fails unless the interface catches it. Worth running
-# whenever those assertions are touched -- a checker that stops firing
-# makes every other test in here pass for the wrong reason.
-check-protocol: compile
-	$(VIVADO_ENV) $(XELAB_BIN) $(XELAB_FLAGS) $(CHECK_TOP) -s $(CHECK_SNAPSHOT)
-	@set -o pipefail; \
-	{ $(VIVADO_ENV) $(XSIM_BIN) $(CHECK_SNAPSHOT) -R | tee check.log; } && \
-	! grep -q '^ result  : FAILED$$' check.log
-
 # Every test in turn against one elaborated snapshot. Keeps going after a
 # failure so one broken test does not hide the state of the others, then
 # fails the target if any of them failed.
 regress: elab
-	@$(MAKE) --no-print-directory check-protocol
 	@set -o pipefail; rc=0; \
 	for t in $(REGRESS_TESTS); do \
 	  echo "=== $$t ==="; \
@@ -203,7 +184,7 @@ regress: elab
 # hand-made and is not a build artifact, so `make clean` leaves it alone.
 clean:
 	rm -rf xsim.dir *.wdb *.jou *.log *.pb webtalk* .Xil
-	rm -f $(SNAPSHOT).* $(CHECK_SNAPSHOT).*
+	rm -f $(SNAPSHOT).*
 
 help:
 	@echo "Targets:"
@@ -215,7 +196,6 @@ help:
 	@echo "  view           - reopen the last captured waveforms, without re-running"
 	@echo "  gui            - build and run interactively in the XSIM GUI"
 	@echo "  regress        - run every test in REGRESS_TESTS against one snapshot"
-	@echo "  check-protocol - negative test: prove the protocol assertions fire"
 	@echo "  clean          - remove simulation artifacts"
 	@echo ""
 	@echo "Common overrides: TEST=<uvm_test> SEED=<n> UVM_VERBOSITY=<UVM_*> WAVES=1 VIVADO_PATH=<path>"

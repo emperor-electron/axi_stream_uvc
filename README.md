@@ -19,12 +19,27 @@ width without a single compile-time definition.
 - **Parameterizable widths** — TDATA/TID/TDEST/TUSER are SystemVerilog
   parameters, so five differently sized links elaborate into one snapshot and
   are all exercised by one `make` run.
+- **One interface file, synthesizable too** — the clocking blocks, assertions
+  and configuration API sit behind `` `ifdef AXI_STREAM_IF_SIM ``, so the same
+  `axi_stream_if.sv` is both the UVC's virtual interface and an interface you
+  can instantiate in RTL.
 
 Only XSIM (Vivado 2023.2) has been used so far; see
 [Simulator notes](#simulator-notes) for the two XSIM bugs this code works
 around.
 
 ## Using it in your project
+
+The fastest way in is [`example/`](example) — a complete, runnable testbench
+around a small DUT, written to be read. `example_tb_top.sv` and
+`example_base_test.sv` carry numbered comments walking through connecting the
+UVC and configuring it; copy the pair and swap in your own design.
+
+```bash
+cd example && make
+```
+
+The rest of this section is the same material in prose.
 
 ```bash
 export AXI_STREAM_UVC_ROOT=/path/to/axi_stream_uvc
@@ -108,6 +123,33 @@ test touches, and a parameterized `axi_stream_env #(...)` that adds the agents
 and publishes its sequencer up into the base. A test can then keep
 `axi_stream_env_base envs[$]` containing a 4-byte and a 16-byte link side by
 side and start the same sequence on both.
+
+### One file for simulation and synthesis
+
+`axi_stream_if.sv` is meant to be the only AXI4-Stream interface in your
+project — the UVC's virtual interface *and* the interface you wire up inside a
+design. Everything a synthesis tool would reject (clocking blocks, assertions,
+coverpoints, the string and `%m` reporting helpers) is inside
+`` `ifdef AXI_STREAM_IF_SIM ``; what remains is the signal set and two
+synthesizable modports:
+
+```systemverilog
+axi_stream_if #(.DATA_BYTES(8)) axis (.aclk(clk), .aresetn(rstn));
+my_producer u_src (.m_axis(axis.dut_master));
+my_consumer u_snk (.s_axis(axis.dut_slave));
+```
+
+That macro is set automatically from `XILINX_SIMULATOR`, which xvlog and xelab
+predefine and Vivado synthesis does not — so neither flow needs anything on the
+command line. On a simulator that does not define it, pass
+`+define+AXI_STREAM_IF_SIM`.
+
+Verified both ways: `synth_design` for a `xc7z045` accepts a design
+instantiating the interface with 0 errors and 0 critical warnings, and forcing
+`AXI_STREAM_IF_SIM` on during synthesis makes it fail — so the guard is known
+to be load-bearing rather than merely present.
+
+New coverpoints or formal properties belong inside that guard too.
 
 ### Optional signals
 
@@ -203,11 +245,24 @@ override with `make VIVADO_PATH=/tools/Xilinx/Vivado/2023.2 ...`.
 
 | Target | What it does |
 | --- | --- |
-| `make` | compile, elaborate, run `axi_stream_multiwidth_test` |
+| `make` | compile, elaborate, run `axi_stream_multiwidth_test` to completion |
 | `make regress` | the protocol-checker test, then every test below |
 | `make check-protocol` | negative test: break each rule, require it to be caught |
 | `make TEST=<name>` | one test |
-| `make waves` / `make gui` | with a waveform database / in the XSIM GUI |
+| `make waves` | run to completion, then open the waveforms in the Vivado window |
+| `make view` | reopen the last captured waveforms without re-running |
+| `make gui` | run interactively in the XSIM GUI |
+
+### Keeping your waveform layout
+
+`make waves` runs the test in batch (so it still fails on a failing test), then
+opens `waves.wdb` in Vivado. Arrange the waveform how you like it and save it
+from the GUI as `axi_stream_tb_top.wcfg` — `<TOP>.wcfg` is what the GUI offers
+by default — and every later `make waves` or `make view` reopens with it via
+`--view`, so the layout is not lost each time the simulation is re-run.
+`waves.wcfg` is accepted as a fallback name, `WAVE_CFG=` overrides both, and
+`make clean` deliberately does not delete `*.wcfg`: a hand-made arrangement is
+not a build artifact.
 
 | Test | What it covers |
 | --- | --- |
@@ -270,6 +325,15 @@ src/                        the reusable UVC -- this is what other projects comp
   axi_stream_agent.sv         where parameterized meets unparameterized
   axi_stream_seq_lib.sv       beat / packet / payload / sparse / random
   axi_stream_uvc.f            drop this into another testbench's compile
+
+example/                    a runnable integration example, written to be read
+  example_tb_top.sv           STEP 1-5: interfaces, DUT wiring, config DB
+  example_base_test.sv        STEP 1-5: configs, backpressure, stimulus
+  example_env.sv              STEP 1-4: agents and analysis ports
+  example_scoreboard.sv       consuming the beat and packet analysis ports
+  example_tb_pkg.sv           the widths, written down once
+  example_dut.sv              a register slice, so backpressure has an effect
+  Makefile filelist.f wave.tcl
 
 tb/                         self-test; no consuming project needs any of it
   axi_stream_fifo.sv          a protocol-correct FIFO to talk to

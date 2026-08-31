@@ -2,12 +2,35 @@
 // Filename: axi_stream_if.sv
 // Author  : Benjamin Tamayo
 // Date    : 2026-08-30
-// Purpose : Parameterizable AMBA AXI4-Stream interface (ARM IHI 0051A)
-//           carrying the full signal set, race-free clocking blocks for
-//           the master/slave/monitor views, DUT-facing modports, and a
-//           self-contained set of protocol assertions that police both
-//           the UVC and the DUT.
+// Purpose : Parameterizable AMBA AXI4-Stream interface (ARM IHI 0051A).
+//           One file serving two masters: a synthesizable interface to
+//           wire up inside a design, and -- under a simulation-only
+//           guard -- the clocking blocks, protocol assertions and
+//           configuration API that make it the UVC's virtual interface.
 ///////////////////////////////////////////////////////////////////
+//
+// Synthesizable and verification content in one file
+// --------------------------------------------------
+// Everything a synthesis tool would reject -- clocking blocks,
+// assertions, coverpoints, the string/`%m` reporting helpers -- lives
+// inside `ifdef AXI_STREAM_IF_SIM`. What is left outside it is just the
+// signal set and the DUT-facing modports, so the same file can be
+// instantiated in RTL and elaborated by Vivado synthesis:
+//
+//   axi_stream_if #(.DATA_BYTES(8)) axis (.aclk(clk), .aresetn(rstn));
+//   my_producer u_src (.m_axis(axis.dut_master));
+//   my_consumer u_snk (.s_axis(axis.dut_slave));
+//
+// AXI_STREAM_IF_SIM is set automatically from XILINX_SIMULATOR, which
+// xvlog/xelab predefine and Vivado synthesis does not, so nothing has to
+// be passed on the command line for either flow. On a simulator that
+// does not define it, ask for it explicitly:
+//
+//   vlog +define+AXI_STREAM_IF_SIM ...
+//
+// The UVC needs the simulation half (its drivers and monitor talk to the
+// clocking blocks), so a UVC compile without that macro will not build --
+// loudly, at the first reference to `mst_cb`, rather than subtly.
 //
 // Parameterization
 // ----------------
@@ -32,9 +55,18 @@
 // Signal presence and `checks_enable` are plain variables, so a
 // testbench with no UVM in it can set them directly:
 //
-//   initial dut_in.configure(.tkeep(1), .tstrb(0), .tlast(1),
-//                            .tid(0), .tdest(0), .tuser(1), .checks(1));
+//   initial dut_in.configure(.en_tkeep(1), .en_tstrb(0), .en_tlast(1),
+//                            .en_tid(0), .en_tdest(0), .en_tuser(1));
 //
+
+// Derive the simulation gate from the simulator's own macro, unless the
+// user has already asked for it. `ifndef first, so an explicit
+// +define+AXI_STREAM_IF_SIM on any other simulator wins.
+`ifndef AXI_STREAM_IF_SIM
+  `ifdef XILINX_SIMULATOR
+    `define AXI_STREAM_IF_SIM
+  `endif
+`endif
 
 interface axi_stream_if #(
   // TDATA width, in bytes. TDATA is 8*DATA_BYTES bits wide; TKEEP and
@@ -76,6 +108,31 @@ interface axi_stream_if #(
   logic [TID_W-1:0]   tid;
   logic [TDEST_W-1:0] tdest;
   logic [TUSER_W-1:0] tuser;
+
+  // ---------------------------------------------------------------------
+  // DUT-facing modports. A DUT written against these gets the signal
+  // directions checked at elaboration; a DUT with plain ports can just
+  // be wired to the signals by name instead. Both are synthesizable.
+  // ---------------------------------------------------------------------
+  modport dut_slave (
+    input  aclk, aresetn, tvalid, tdata, tkeep, tstrb, tlast, tid, tdest, tuser,
+    output tready
+  );
+
+  modport dut_master (
+    input  aclk, aresetn, tready,
+    output tvalid, tdata, tkeep, tstrb, tlast, tid, tdest, tuser
+  );
+
+  // =====================================================================
+  // Everything below here is simulation-only: clocking blocks, the
+  // verification configuration API, and the protocol assertions. None of
+  // it is synthesizable, and none of it is compiled unless
+  // AXI_STREAM_IF_SIM is set (see the header).
+  //
+  // New coverpoints or formal properties belong inside this guard too.
+  // =====================================================================
+`ifdef AXI_STREAM_IF_SIM
 
   // ---------------------------------------------------------------------
   // Run-time description of which optional signals this link actually
@@ -158,21 +215,6 @@ interface axi_stream_if #(
     input aresetn;
   endclocking : mon_cb
 
-  // ---------------------------------------------------------------------
-  // DUT-facing modports. A DUT written against these gets the signal
-  // directions checked at elaboration; a DUT with plain ports can just
-  // be wired to the signals by name instead.
-  // ---------------------------------------------------------------------
-  modport dut_slave (
-    input  aclk, aresetn, tvalid, tdata, tkeep, tstrb, tlast, tid, tdest, tuser,
-    output tready
-  );
-
-  modport dut_master (
-    input  aclk, aresetn, tready,
-    output tvalid, tdata, tkeep, tstrb, tlast, tid, tdest, tuser
-  );
-
   // UVC-facing modports, for testbenches that prefer to pass modports
   // around. The UVC itself takes the whole interface, since it needs
   // both a clocking block and the configure()/protocol_error_count API.
@@ -190,7 +232,6 @@ interface axi_stream_if #(
   // disable condition so that an X on reset disables the check instead
   // of evaluating to X and (in some tools) letting it run anyway.
   // =====================================================================
-`ifndef AXIS_NO_PROTOCOL_CHECKS
 
   // ---- 2.2.1: once TVALID is asserted it must stay asserted until the
   // handshake occurs. A master may not withdraw an offered transfer.
@@ -368,6 +409,6 @@ interface axi_stream_if #(
         $sformatf("TDATA byte %0d is X/Z but TKEEP marks it as a valid byte", b));
   end : g_byte_known
 
-`endif  // AXIS_NO_PROTOCOL_CHECKS
+`endif  // AXI_STREAM_IF_SIM
 
 endinterface : axi_stream_if
