@@ -48,7 +48,7 @@ PLUSARGS        ?=
 SIM_LOG         ?= sim.log
 WAVE_TCL        ?= wave.tcl
 
-# Waveform database written by `make waves` and reopened by `make view`.
+# Waveform database captured and reopened by `make waves`.
 WAVE_DB         ?= waves.wdb
 
 # Wave *configuration* -- the signal list, groups, radices and colours you
@@ -110,7 +110,7 @@ REGRESS_TESTS ?= axi_stream_smoke_test axi_stream_multiwidth_test \
 CHECK_TOP      ?= axi_stream_if_check_tb
 CHECK_SNAPSHOT ?= $(CHECK_TOP)_snap
 
-.PHONY: all compile elab run sim waves view gui clean help check-tools regress check-protocol
+.PHONY: all compile elab run sim waves gui clean help check-tools regress check-protocol
 
 # `make` on its own builds everything and runs the test to completion in
 # batch mode, failing the invocation if the test failed.
@@ -138,34 +138,40 @@ run sim: elab
 	{ $(VIVADO_ENV) $(XSIM_BIN) $(SNAPSHOT) $(RUN_FLAGS) -R | tee $(SIM_LOG); } && \
 	$(CHECK_PASS)
 
-# Run the test to completion capturing a waveform database, then open it
-# in the Vivado window for viewing. The simulation itself still runs in
-# batch, so this fails on a failing test exactly like `make run` does --
-# the GUI only opens once the run has finished.
-waves: elab
+# Open the waveforms in the Vivado window.
+#
+# $(WAVE_DB) is a real file target rather than a phony one, so make runs
+# the recipe below only when the database is missing: the first `make
+# waves` simulates and then opens, and every later one opens straight
+# away. Delete $(WAVE_DB) (or `make clean`) to force a fresh capture --
+# which is what you want after editing the design, since make cannot tell
+# that an existing database is out of date.
+$(WAVE_DB):
+	@$(MAKE) --no-print-directory elab
+	@echo "==> no $(WAVE_DB) yet; running $(TEST) to capture one"
 	@set -o pipefail; \
-	{ $(VIVADO_ENV) $(XSIM_BIN) $(SNAPSHOT) $(RUN_FLAGS) -wdb $(WAVE_DB) -tclbatch $(WAVE_TCL) | tee $(SIM_LOG); } && \
-	$(CHECK_PASS)
-	@$(MAKE) --no-print-directory view
-
-# Open an already-captured waveform database without re-running anything.
-view:
+	{ $(VIVADO_ENV) $(XSIM_BIN) $(SNAPSHOT) $(RUN_FLAGS) -wdb $(WAVE_DB) -tclbatch $(WAVE_TCL) | tee $(SIM_LOG); } || true
 	@if [ ! -f "$(WAVE_DB)" ]; then \
-		echo "error: no waveform database at $(WAVE_DB)"; \
-		echo "       run 'make waves' first to capture one."; \
+		echo "error: the simulation produced no $(WAVE_DB) -- see $(SIM_LOG)"; \
 		exit 1; \
 	fi
+
+waves: $(WAVE_DB)
+	@if grep -q '^ result  : FAILED$$' $(SIM_LOG) 2>/dev/null; then \
+		echo "note: that run FAILED -- opening its waveforms anyway, which is"; \
+		echo "      the point. Use 'make run' as the pass/fail gate."; \
+	fi
 	@if [ -n "$(WAVE_CFG)" ]; then \
-		echo "opening $(WAVE_DB) with saved wave configuration $(WAVE_CFG)"; \
+		echo "==> opening $(WAVE_DB) with saved wave configuration $(WAVE_CFG)"; \
 	else \
-		echo "opening $(WAVE_DB) with no saved wave configuration."; \
-		echo "  (arrange the waveform how you like, then File > Save Waveform"; \
-		echo "   Configuration as '$(TOP).wcfg' here -- later runs reopen with it.)"; \
+		echo "==> opening $(WAVE_DB) with no saved wave configuration."; \
+		echo "    (arrange the waveform how you like, then File > Save Waveform"; \
+		echo "     Configuration as '$(TOP).wcfg' here -- later runs reopen with it.)"; \
 	fi
 	@$(VIVADO_ENV) $(XSIM_BIN) --gui $(WAVE_DB) $(if $(WAVE_CFG),--view $(WAVE_CFG))
 
 # Run interactively in the XSIM GUI: the simulation is live and stepped
-# from the GUI, rather than replayed from a database as `view` does.
+# from the GUI, rather than replayed from a captured database.
 gui: elab
 	$(VIVADO_ENV) $(XSIM_BIN) $(SNAPSHOT) $(RUN_FLAGS) --gui $(if $(WAVE_CFG),--view $(WAVE_CFG))
 
@@ -211,8 +217,7 @@ help:
 	@echo "  compile        - compile sources listed in FILELIST + EXTRA_FILELIST with xvlog"
 	@echo "  elab           - elaborate TOP into a simulation snapshot"
 	@echo "  run / sim      - build and run TEST to completion, no GUI"
-	@echo "  waves          - run to completion, then open the waveforms in Vivado"
-	@echo "  view           - reopen the last captured waveforms, without re-running"
+	@echo "  waves          - open the waveforms in Vivado, simulating first if needed"
 	@echo "  gui            - build and run interactively in the XSIM GUI"
 	@echo "  regress        - run every test in REGRESS_TESTS against one snapshot"
 	@echo "  check-protocol - negative test: prove the protocol assertions fire"
@@ -220,9 +225,10 @@ help:
 	@echo ""
 	@echo "Common overrides: TEST=<uvm_test> SEED=<n> UVM_VERBOSITY=<UVM_*> WAVES=1 VIVADO_PATH=<path>"
 	@echo ""
-	@echo "Waveforms: 'make waves' runs the test and opens $(WAVE_DB) in Vivado."
+	@echo "Waveforms: 'make waves' opens $(WAVE_DB) in Vivado, running the test"
+	@echo "first if there is no database yet. Delete $(WAVE_DB) to force a re-run."
 	@echo "Save your arrangement from the GUI as $(TOP).wcfg and it is reused"
-	@echo "automatically on every later 'make waves' / 'make view'."
+	@echo "automatically on every later 'make waves'."
 	@echo ""
 	@echo "Other files needed for simulation (e.g. sub-modules your DUT"
 	@echo "instantiates)? List them in $(EXTRA_FILELIST), one per line."

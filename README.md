@@ -249,20 +249,28 @@ override with `make VIVADO_PATH=/tools/Xilinx/Vivado/2023.2 ...`.
 | `make regress` | the protocol-checker test, then every test below |
 | `make check-protocol` | negative test: break each rule, require it to be caught |
 | `make TEST=<name>` | one test |
-| `make waves` | run to completion, then open the waveforms in the Vivado window |
-| `make view` | reopen the last captured waveforms without re-running |
+| `make waves` | open the waveforms in Vivado, simulating first if there are none |
 | `make gui` | run interactively in the XSIM GUI |
 
-### Keeping your waveform layout
+### Waveforms
 
-`make waves` runs the test in batch (so it still fails on a failing test), then
-opens `waves.wdb` in Vivado. Arrange the waveform how you like it and save it
-from the GUI as `axi_stream_tb_top.wcfg` — `<TOP>.wcfg` is what the GUI offers
-by default — and every later `make waves` or `make view` reopens with it via
-`--view`, so the layout is not lost each time the simulation is re-run.
-`waves.wcfg` is accepted as a fallback name, `WAVE_CFG=` overrides both, and
-`make clean` deliberately does not delete `*.wcfg`: a hand-made arrangement is
-not a build artifact.
+`make waves` opens `waves.wdb` in the Vivado window. `waves.wdb` is a real file
+target, so the recipe that produces it runs only when it is missing: the first
+call simulates and then opens, and every later call opens straight away. Delete
+the database (or `make clean`) to force a fresh capture — worth remembering
+after editing the design, since make cannot tell that an existing database has
+gone stale.
+
+A failing test still opens its waveforms, which is the point of the target;
+`make` / `make run` / `make regress` remain the pass/fail gates, and `make
+waves` prints a note when the run it is showing you failed.
+
+Arrange the waveform how you like and save it from the GUI as
+`axi_stream_tb_top.wcfg` — `<TOP>.wcfg` is what the GUI offers by default — and
+every later `make waves` reopens with it via `--view`, so the layout survives
+re-running the simulation. `waves.wcfg` is accepted as a fallback name,
+`WAVE_CFG=` overrides both, and `make clean` deliberately does not delete
+`*.wcfg`: a hand-made arrangement is not a build artifact.
 
 | Test | What it covers |
 | --- | --- |
