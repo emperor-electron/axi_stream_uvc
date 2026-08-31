@@ -148,6 +148,8 @@ $(WAVE_DB):
 		exit 1; \
 	fi
 
+# A failing test still opens its waveforms -- that is the point of this
+# target. `run` stays the pass/fail gate for CI.
 waves: $(WAVE_DB)
 	@if grep -q '^ result  : FAILED$$' $(SIM_LOG) 2>/dev/null; then \
 		echo "note: that run FAILED -- opening its waveforms anyway, which is"; \
