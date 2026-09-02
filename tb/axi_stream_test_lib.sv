@@ -70,7 +70,7 @@ class axi_stream_base_test extends uvm_test;
   extern virtual task drain(int unsigned limit_cycles = 0);
   extern virtual function bit all_links_drained();
 
-  extern function axi_stream_config make_cfg(string name, axi_stream_role_e link_role,
+  extern function axi_stream_config make_config(string name, axi_stream_role_e link_role,
                                              bit en_tkeep = 1'b1, bit en_tstrb = 1'b1,
                                              bit en_tlast = 1'b1);
 
@@ -105,27 +105,27 @@ function void axi_stream_base_test::build_phase(uvm_phase phase);
     // env_min is the bare link: TDATA/TVALID/TREADY/TLAST and nothing
     // else, so both ends drop TKEEP and TSTRB.
     bit lean = (envs[i] == env_min);
-    envs[i].mst_cfg = make_cfg("mst_cfg", AXIS_MASTER, .en_tkeep(!lean), .en_tstrb(!lean));
-    envs[i].slv_cfg = make_cfg("slv_cfg", AXIS_SLAVE,  .en_tkeep(!lean), .en_tstrb(!lean));
+    envs[i].master_config = make_config("master_config", AXIS_MASTER, .en_tkeep(!lean), .en_tstrb(!lean));
+    envs[i].slave_config = make_config("slave_config", AXIS_SLAVE,  .en_tkeep(!lean), .en_tstrb(!lean));
     configure_link(envs[i], i);
   end
 endfunction : build_phase
 
-function axi_stream_config axi_stream_base_test::make_cfg(string name,
+function axi_stream_config axi_stream_base_test::make_config(string name,
                                                           axi_stream_role_e link_role,
                                                           bit en_tkeep = 1'b1,
                                                           bit en_tstrb = 1'b1,
                                                           bit en_tlast = 1'b1);
-  axi_stream_config c;
-  c           = axi_stream_config::type_id::create(name);
-  c.role      = link_role;
-  c.has_tkeep = en_tkeep;
-  c.has_tstrb = en_tstrb;
-  c.has_tlast = en_tlast;
+  axi_stream_config link_config;
+  link_config           = axi_stream_config::type_id::create(name);
+  link_config.role      = link_role;
+  link_config.has_tkeep = en_tkeep;
+  link_config.has_tstrb = en_tstrb;
+  link_config.has_tlast = en_tlast;
   // TID/TDEST/TUSER presence comes from the agent's parameters; see
   // axi_stream_agent::adopt_interface_geometry.
-  return c;
-endfunction : make_cfg
+  return link_config;
+endfunction : make_config
 
 // Default: no backpressure, no source pacing. Every test below changes
 // at least one of these.
@@ -158,17 +158,17 @@ task axi_stream_base_test::run_phase(uvm_phase phase);
 endtask : run_phase
 
 task axi_stream_base_test::run_link(axi_stream_env_base e, int unsigned index);
-  axi_stream_random_seq seq;
+  axi_stream_random_seq random_sequence;
   int unsigned n = packets_per_link;
-  seq = axi_stream_random_seq::type_id::create($sformatf("rnd_%0d", index));
-  if (!seq.randomize() with { num_packets == n; })
+  random_sequence = axi_stream_random_seq::type_id::create($sformatf("random_%0d", index));
+  if (!random_sequence.randomize() with { num_packets == n; })
     `uvm_fatal("RAND", "random sequence randomization failed")
-  seq.start(e.mst_sqr);
+  random_sequence.start(e.master_sequencer);
 endtask : run_link
 
 function bit axi_stream_base_test::all_links_drained();
   foreach (envs[i])
-    if (!envs[i].sb.is_drained())
+    if (!envs[i].scoreboard.is_drained())
       return 1'b0;
   return 1'b1;
 endfunction : all_links_drained
@@ -213,7 +213,7 @@ function void axi_stream_smoke_test::configure_link(axi_stream_env_base e, int u
   e.set_pacing(0, 0);
   // Back-to-back at full rate: nothing should ever stall, so a stall of
   // any length means the driver is inserting bubbles it was not asked for.
-  e.slv_cfg.stall_timeout_cycles = 64;
+  e.slave_config.stall_timeout_cycles = 64;
 endfunction : configure_link
 
 
@@ -247,9 +247,9 @@ function void axi_stream_multiwidth_test::configure_link(axi_stream_env_base e,
                                  burst_beats   inside {[1:12]};
                                  delay_max     inside {[0:8]}; })
     `uvm_fatal("RAND", "backpressure policy randomization failed")
-  e.slv_cfg.ready_policy = policy;
+  e.slave_config.ready_policy = policy;
   e.set_pacing(0, $urandom_range(4, 0));
-  e.slv_cfg.stall_timeout_cycles = 2000;
+  e.slave_config.stall_timeout_cycles = 2000;
 endfunction : configure_link
 
 
@@ -286,7 +286,7 @@ function void axi_stream_backpressure_test::configure_link(axi_stream_env_base e
   // Source-side bubbles too, so the two pacing mechanisms interact
   // rather than each being tested against a perfectly behaved partner.
   e.set_pacing(0, 3);
-  e.slv_cfg.stall_timeout_cycles = 4000;
+  e.slave_config.stall_timeout_cycles = 4000;
 endfunction : configure_link
 
 
@@ -324,7 +324,7 @@ function void axi_stream_no_ready_test::configure_link(axi_stream_env_base e,
   e.set_pacing(0, 0);
   // The whole point of this test is a very long legitimate stall, so the
   // deadlock watchdog stays off until backpressure is released.
-  e.slv_cfg.stall_timeout_cycles = 0;
+  e.slave_config.stall_timeout_cycles = 0;
 endfunction : configure_link
 
 task axi_stream_no_ready_test::run_phase(uvm_phase phase);
@@ -340,15 +340,15 @@ task axi_stream_no_ready_test::run_phase(uvm_phase phase);
   // Let the FIFOs fill and every link jam solid against TREADY low.
   ctrl.wait_cycles(stall_cycles);
   foreach (envs[i])
-    if (envs[i].sb.num_beats_matched != 0)
+    if (envs[i].scoreboard.num_beats_matched != 0)
       `uvm_error("BACKPRESSURE", $sformatf(
           "link %s delivered %0d beats while TREADY was held low the whole time",
-          envs[i].link_desc, envs[i].sb.num_beats_matched))
+          envs[i].link_desc, envs[i].scoreboard.num_beats_matched))
 
   `uvm_info("BACKPRESSURE", "releasing backpressure on every link", UVM_LOW)
   foreach (envs[i]) begin
     envs[i].set_backpressure(AXIS_READY_ALWAYS);
-    envs[i].slv_cfg.stall_timeout_cycles = 4000;
+    envs[i].slave_config.stall_timeout_cycles = 4000;
   end
 
   wait fork;
@@ -382,16 +382,16 @@ endfunction : new
 function void axi_stream_sparse_test::configure_link(axi_stream_env_base e, int unsigned index);
   e.set_backpressure(AXIS_READY_RANDOM, .percent(60));
   e.set_pacing(0, 2);
-  e.slv_cfg.stall_timeout_cycles = 4000;
+  e.slave_config.stall_timeout_cycles = 4000;
 endfunction : configure_link
 
 task axi_stream_sparse_test::run_link(axi_stream_env_base e, int unsigned index);
   for (int p = 0; p < packets_per_link; p++) begin
-    axi_stream_sparse_packet_seq seq;
-    seq = axi_stream_sparse_packet_seq::type_id::create($sformatf("sparse_%0d_%0d", index, p));
-    if (!seq.randomize())
+    axi_stream_sparse_packet_seq sparse_sequence;
+    sparse_sequence = axi_stream_sparse_packet_seq::type_id::create($sformatf("sparse_%0d_%0d", index, p));
+    if (!sparse_sequence.randomize())
       `uvm_fatal("RAND", "sparse sequence randomization failed")
-    seq.start(e.mst_sqr);
+    sparse_sequence.start(e.master_sequencer);
   end
 endtask : run_link
 
@@ -426,14 +426,14 @@ endfunction : new
 function void axi_stream_reset_test::configure_link(axi_stream_env_base e, int unsigned index);
   e.set_backpressure(AXIS_READY_RANDOM, .percent(40));
   e.set_pacing(0, 2);
-  e.slv_cfg.stall_timeout_cycles = 4000;
+  e.slave_config.stall_timeout_cycles = 4000;
 endfunction : configure_link
 
 task axi_stream_reset_test::run_phase(uvm_phase phase);
   phase.raise_objection(this, "reset in the middle of traffic");
 
   // --- Pass 1: traffic across a reset. Nothing here is checked. ---
-  foreach (envs[i]) envs[i].sb.checking_enabled = 1'b0;
+  foreach (envs[i]) envs[i].scoreboard.checking_enabled = 1'b0;
 
   foreach (envs[i]) begin
     automatic int unsigned idx = i;
@@ -451,8 +451,8 @@ task axi_stream_reset_test::run_phase(uvm_phase phase);
 
   // --- Pass 2: the link must now behave as though nothing happened. ---
   foreach (envs[i]) begin
-    envs[i].sb.flush();
-    envs[i].sb.checking_enabled = 1'b1;
+    envs[i].scoreboard.flush();
+    envs[i].scoreboard.checking_enabled = 1'b1;
   end
   `uvm_info("RESET", "reset released; re-running traffic with checking on", UVM_LOW)
 

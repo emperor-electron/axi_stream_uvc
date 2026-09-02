@@ -16,8 +16,8 @@
 // unused on this side. Programming backpressure is therefore a matter of
 // configuring (or replacing) the policy, not of writing stimulus:
 //
-//   cfg.set_ready_mode(AXIS_READY_BURST, .burst_beats(8), .stall_cycles(3));
-//   cfg.ready_policy = my_credit_based_policy;   // or anything you like
+//   agent_config.set_ready_mode(AXIS_READY_BURST, .burst_beats(8), .stall_cycles(3));
+//   agent_config.ready_policy = my_credit_based_policy;   // or anything you like
 //
 // The policy is asked for the *next* cycle's TREADY once per ACLK edge,
 // before this cycle's TVALID can influence it. That one-cycle offset is
@@ -39,7 +39,7 @@ class axi_stream_slave_driver #(
   `uvm_component_param_utils(this_type)
 
   vif_t                   vif;
-  axi_stream_config       cfg;
+  axi_stream_config       agent_config;
   axi_stream_ready_policy policy;
 
   // Cycle census, reported at the end of the run: the ratio of these is
@@ -68,18 +68,18 @@ function void axi_stream_slave_driver::build_phase(uvm_phase phase);
     `uvm_fatal("NOVIF", $sformatf(
         "no virtual axi_stream_if #(%0d,%0d,%0d,%0d) set in the config DB for %s",
         DATA_BYTES, ID_WIDTH, DEST_WIDTH, USER_WIDTH, get_full_name()))
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "cfg", cfg))
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "agent_config", agent_config))
     `uvm_fatal("NOCFG", "no axi_stream_config set in the config DB")
 
   // A config that never mentioned backpressure gets none, rather than
   // some arbitrary default throttle it did not ask for.
-  if (cfg.ready_policy == null) begin
-    axi_stream_default_ready_policy dflt;
-    dflt = axi_stream_default_ready_policy::type_id::create("ready_policy");
-    dflt.mode = AXIS_READY_ALWAYS;
-    cfg.ready_policy = dflt;
+  if (agent_config.ready_policy == null) begin
+    axi_stream_default_ready_policy default_policy;
+    default_policy = axi_stream_default_ready_policy::type_id::create("ready_policy");
+    default_policy.mode = AXIS_READY_ALWAYS;
+    agent_config.ready_policy = default_policy;
   end
-  policy = cfg.ready_policy;
+  policy = agent_config.ready_policy;
 endfunction : build_phase
 
 task axi_stream_slave_driver::run_phase(uvm_phase phase);
@@ -102,8 +102,8 @@ task axi_stream_slave_driver::run_phase(uvm_phase phase);
       // so a test can swap the backpressure model mid-run -- switching
       // from AXIS_READY_NEVER to AXIS_READY_ALWAYS to release a
       // deliberately stalled link, say -- and have it take effect.
-      if ((cfg.ready_policy != null) && (cfg.ready_policy != policy)) begin
-        policy = cfg.ready_policy;
+      if ((agent_config.ready_policy != null) && (agent_config.ready_policy != policy)) begin
+        policy = agent_config.ready_policy;
         policy.reset();
         `uvm_info("BACKPRESSURE",
                   $sformatf("backpressure model changed to %s", policy.convert2string()),

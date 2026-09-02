@@ -31,8 +31,8 @@ class example_base_test extends uvm_test;
   // Configs are built here rather than inside the env so that a derived
   // test can adjust them in its own build_phase before the agents are
   // created. See example_backpressure_test below.
-  axi_stream_config mst_cfg;
-  axi_stream_config slv_cfg;
+  axi_stream_config master_config;
+  axi_stream_config slave_config;
 
   int unsigned num_packets = 10;
 
@@ -53,33 +53,33 @@ function void example_base_test::build_phase(uvm_phase phase);
   // STEP 1 -- the master-side config: the agent that drives transfers
   //           INTO the DUT's slave port.
   // ---------------------------------------------------------------------
-  mst_cfg      = axi_stream_config::type_id::create("mst_cfg");
-  mst_cfg.role = AXIS_MASTER;
+  master_config      = axi_stream_config::type_id::create("master_config");
+  master_config.role = AXIS_MASTER;
 
   // Which optional signals this link carries. TKEEP/TSTRB/TLAST are
   // settable because their presence does not change any signal's width.
   // TID/TDEST/TUSER are *not* set here -- the agent derives those from
   // its own width parameters, since a link with ID_WIDTH=0 cannot carry
   // TID no matter what a config claims.
-  mst_cfg.has_tkeep = 1'b1;
-  mst_cfg.has_tstrb = 1'b1;
-  mst_cfg.has_tlast = 1'b1;
+  master_config.has_tkeep = 1'b1;
+  master_config.has_tstrb = 1'b1;
+  master_config.has_tlast = 1'b1;
 
   // Source-side pacing: idle ACLK cycles inserted before each beat, which
   // is how TVALID bubbles get injected. (0, 0) streams back-to-back at
   // full rate; widen the window to make the source bursty.
-  mst_cfg.set_beat_delay(0, 2);
+  master_config.set_beat_delay(0, 2);
 
   // ---------------------------------------------------------------------
   // STEP 2 -- the slave-side config: the agent that accepts transfers
   //           FROM the DUT's master port. This is where backpressure
   //           lives, and it is the reason to have a slave agent at all.
   // ---------------------------------------------------------------------
-  slv_cfg      = axi_stream_config::type_id::create("slv_cfg");
-  slv_cfg.role = AXIS_SLAVE;
-  slv_cfg.has_tkeep = 1'b1;
-  slv_cfg.has_tstrb = 1'b1;
-  slv_cfg.has_tlast = 1'b1;
+  slave_config      = axi_stream_config::type_id::create("slave_config");
+  slave_config.role = AXIS_SLAVE;
+  slave_config.has_tkeep = 1'b1;
+  slave_config.has_tstrb = 1'b1;
+  slave_config.has_tlast = 1'b1;
 
   // Pick a backpressure model. The built-ins are:
   //
@@ -91,28 +91,28 @@ function void example_base_test::build_phase(uvm_phase phase);
   //   AXIS_READY_DELAY   hold off .delay_min()...delay_max() after TVALID
   //
   // For anything else, extend axi_stream_ready_policy, override
-  // next_ready(), and assign it to slv_cfg.ready_policy directly. The
+  // next_ready(), and assign it to slave_config.ready_policy directly. The
   // policy class is not parameterized by width, so one custom model
   // works on every link in your testbench.
-  slv_cfg.set_ready_mode(AXIS_READY_RANDOM, .percent(60));
+  slave_config.set_ready_mode(AXIS_READY_RANDOM, .percent(60));
 
   // Optional deadlock watchdog: error out if a transfer stays offered
   // this long without being accepted. Leave it at 0 (the default) if a
   // test deliberately backpressures forever.
-  slv_cfg.stall_timeout_cycles = 2000;
+  slave_config.stall_timeout_cycles = 2000;
 
   // ---------------------------------------------------------------------
   // STEP 3 -- hand both configs to the env and build it. The env passes
   //           each one down to its agent; see example_env.sv, STEP 2.
   // ---------------------------------------------------------------------
-  uvm_config_db#(axi_stream_config)::set(this, "env", "mst_cfg", mst_cfg);
-  uvm_config_db#(axi_stream_config)::set(this, "env", "slv_cfg", slv_cfg);
+  uvm_config_db#(axi_stream_config)::set(this, "env", "master_config", master_config);
+  uvm_config_db#(axi_stream_config)::set(this, "env", "slave_config", slave_config);
 
   env = example_env::type_id::create("env", this);
 endfunction : build_phase
 
 task example_base_test::run_phase(uvm_phase phase);
-  axi_stream_random_seq seq;
+  axi_stream_random_seq random_sequence;
   int unsigned n = num_packets;
 
   phase.raise_objection(this, "streaming traffic through the DUT");
@@ -135,19 +135,19 @@ task example_base_test::run_phase(uvm_phase phase);
   //   axi_stream_sparse_packet_seq   null and position byte payloads
   //   axi_stream_random_seq          a mix of the above
   // ---------------------------------------------------------------------
-  seq = axi_stream_random_seq::type_id::create("seq");
-  if (!seq.randomize() with { num_packets == n; })
+  random_sequence = axi_stream_random_seq::type_id::create("random_sequence");
+  if (!random_sequence.randomize() with { num_packets == n; })
     `uvm_fatal("RAND", "sequence randomization failed")
-  seq.start(env.mst_agt.sqr);
+  random_sequence.start(env.master_agent.sequencer);
 
   // ---------------------------------------------------------------------
   // STEP 5 -- let the last beats reach the far side before ending.
   //
-  // seq.start() returns when the last beat has been *driven*, but it is
+  // random_sequence.start() returns when the last beat has been *driven*, but it is
   // still inside the DUT. Ending the test now would strand it and the
   // scoreboard would report it as lost, so wait for the design to drain.
   // ---------------------------------------------------------------------
-  env.sb.wait_until_drained(.timeout_cycles(5000));
+  env.scoreboard.wait_until_drained(.timeout_cycles(5000));
 
   phase.drop_objection(this, "traffic complete");
 endtask : run_phase
@@ -177,11 +177,11 @@ function void example_backpressure_test::build_phase(uvm_phase phase);
   // Accept four beats, then shut the port for six cycles, forever. This
   // is the model that finds FIFO-full bugs, because the stall always
   // lands after a known number of beats however the source paced them.
-  slv_cfg.set_ready_mode(AXIS_READY_BURST, .burst_beats(4), .stall_cycles(6));
+  slave_config.set_ready_mode(AXIS_READY_BURST, .burst_beats(4), .stall_cycles(6));
 
   // ...and make the source bursty too, so the two interact rather than
   // each being tested against a perfectly behaved partner.
-  mst_cfg.set_beat_delay(0, 4);
+  master_config.set_beat_delay(0, 4);
 endfunction : build_phase
 
 
@@ -207,22 +207,22 @@ function example_directed_test::new(string name = "example_directed_test",
 endfunction : new
 
 task example_directed_test::run_phase(uvm_phase phase);
-  axi_stream_packet_seq seq;
+  axi_stream_packet_seq directed_sequence;
 
   phase.raise_objection(this, "sending a directed payload");
 
   // A 21-byte frame -- deliberately not a multiple of the 8-byte link
   // width, so the final beat is short and its unused lanes become null
   // bytes. That is the case worth checking by hand in any packet path.
-  seq = axi_stream_packet_seq::type_id::create("directed_seq");
-  seq.cfg = mst_cfg;                       // so it knows the link geometry
+  directed_sequence = axi_stream_packet_seq::type_id::create("directed_sequence");
+  directed_sequence.agent_config = master_config;                       // so it knows the link geometry
   for (int i = 0; i < 21; i++)
-    seq.payload.push_back(8'hA0 + i[7:0]);
-  if (!seq.randomize() with { pkt_tid == 3; pkt_tdest == 1; })
+    directed_sequence.payload.push_back(8'hA0 + i[7:0]);
+  if (!directed_sequence.randomize() with { pkt_tid == 3; pkt_tdest == 1; })
     `uvm_fatal("RAND", "directed sequence randomization failed")
-  seq.start(env.mst_agt.sqr);
+  directed_sequence.start(env.master_agent.sequencer);
 
-  env.sb.wait_until_drained(.timeout_cycles(5000));
+  env.scoreboard.wait_until_drained(.timeout_cycles(5000));
 
   phase.drop_objection(this, "directed payload complete");
 endtask : run_phase

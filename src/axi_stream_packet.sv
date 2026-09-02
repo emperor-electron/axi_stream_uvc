@@ -7,8 +7,8 @@
 //           reason about frames rather than reassembling beats itself.
 ///////////////////////////////////////////////////////////////////
 //
-// The monitor publishes beats on its `ap` and, separately, a packet on
-// `pkt_ap` each time it sees TLAST (or after every beat on a link with
+// The monitor publishes beats on its `beat_analysis_port` and, separately, a packet on
+// `packet_analysis_port` each time it sees TLAST (or after every beat on a link with
 // no TLAST, where each transfer is a packet by definition).
 //
 // payload() flattens the packet to the byte stream a design actually

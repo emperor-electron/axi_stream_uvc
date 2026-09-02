@@ -18,7 +18,7 @@
 
 class axi_stream_sequencer extends uvm_sequencer #(axi_stream_seq_item);
 
-  axi_stream_config cfg;
+  axi_stream_config agent_config;
 
   `uvm_component_utils(axi_stream_sequencer)
 
@@ -33,6 +33,6 @@ endfunction : new
 
 function void axi_stream_sequencer::build_phase(uvm_phase phase);
   super.build_phase(phase);
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "cfg", cfg))
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "agent_config", agent_config))
     `uvm_fatal("NOCFG", "no axi_stream_config set in the config DB")
 endfunction : build_phase

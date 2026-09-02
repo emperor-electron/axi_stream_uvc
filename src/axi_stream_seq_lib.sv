@@ -22,10 +22,10 @@ virtual class axi_stream_base_seq extends uvm_sequence #(axi_stream_seq_item);
 
   `uvm_declare_p_sequencer(axi_stream_sequencer)
 
-  axi_stream_config cfg;
+  axi_stream_config agent_config;
 
   // Non-rand mirrors of the link's routing widths, refreshed by
-  // pre_randomize(). Constraints cannot safely dereference `cfg` (it may
+  // pre_randomize(). Constraints cannot safely dereference `agent_config` (it may
   // still be null when a test randomizes a sequence before starting it),
   // so the widths are copied out first and the constraints use these.
   // With no config yet, both are 0 and the routing fields solve to 0.
@@ -47,25 +47,25 @@ endfunction : new
 
 task axi_stream_base_seq::pre_start();
   super.pre_start();
-  if (cfg == null) begin
+  if (agent_config == null) begin
     if (p_sequencer == null)
       `uvm_fatal("NOSQR", "sequence needs an axi_stream_sequencer to learn the link geometry")
-    cfg = p_sequencer.cfg;
+    agent_config = p_sequencer.agent_config;
   end
-  if (cfg == null)
+  if (agent_config == null)
     `uvm_fatal("NOCFG", "the sequencer has no axi_stream_config")
 endtask : pre_start
 
 function void axi_stream_base_seq::pre_randomize();
-  m_id_width   = (cfg == null) ? 0 : cfg.id_width;
-  m_dest_width = (cfg == null) ? 0 : cfg.dest_width;
+  m_id_width   = (agent_config == null) ? 0 : agent_config.id_width;
+  m_dest_width = (agent_config == null) ? 0 : agent_config.dest_width;
 endfunction : pre_randomize
 
 function axi_stream_seq_item axi_stream_base_seq::new_beat(string name = "beat");
   axi_stream_seq_item beat;
   beat = axi_stream_seq_item::type_id::create(name);
-  beat.cfg = cfg;             // pre_randomize() adopts the geometry
-  beat.set_geometry(cfg);     // ...and so does a beat built by hand
+  beat.agent_config = agent_config;             // pre_randomize() adopts the geometry
+  beat.set_geometry(agent_config);     // ...and so does a beat built by hand
   return beat;
 endfunction : new_beat
 
@@ -145,7 +145,7 @@ task axi_stream_packet_seq::body();
 endtask : body
 
 task axi_stream_packet_seq::send_payload();
-  int unsigned width = cfg.data_bytes;
+  int unsigned width = agent_config.data_bytes;
   int unsigned sent  = 0;
   int unsigned total = payload.size();
 
@@ -236,7 +236,7 @@ function axi_stream_sparse_packet_seq::new(string name = "axi_stream_sparse_pack
 endfunction : new
 
 task axi_stream_sparse_packet_seq::body();
-  if (!cfg.has_tkeep && !cfg.has_tstrb) begin
+  if (!agent_config.has_tkeep && !agent_config.has_tstrb) begin
     `uvm_info("SPARSE",
         "link carries neither TKEEP nor TSTRB; sending dense beats instead", UVM_MEDIUM)
   end
@@ -259,13 +259,13 @@ task axi_stream_sparse_packet_seq::body();
     // constraining them,
     // so the null/position mix is a plain probability the test can dial
     // rather than something the solver has to reconcile.
-    if (cfg.has_tkeep) begin
+    if (agent_config.has_tkeep) begin
       foreach (beat.tkeep[i]) begin
         if ($urandom_range(99, 0) < null_percent) begin
           beat.tkeep[i] = 1'b0;
           beat.tstrb[i] = 1'b0;                  // never the reserved encoding
         end
-        else if (cfg.has_tstrb && ($urandom_range(99, 0) < position_percent)) begin
+        else if (agent_config.has_tstrb && ($urandom_range(99, 0) < position_percent)) begin
           beat.tkeep[i] = 1'b1;
           beat.tstrb[i] = 1'b0;                  // position byte
         end
@@ -309,20 +309,20 @@ endfunction : new
 task axi_stream_random_seq::body();
   for (int p = 0; p < num_packets; p++) begin
     if ($urandom_range(99, 0) < sparse_percent) begin
-      axi_stream_sparse_packet_seq seq;
-      seq = axi_stream_sparse_packet_seq::type_id::create($sformatf("sparse_pkt_%0d", p));
-      seq.cfg = cfg;
-      if (!seq.randomize() with { num_beats inside {[min_beats:max_beats]}; })
+      axi_stream_sparse_packet_seq sparse_sequence;
+      sparse_sequence = axi_stream_sparse_packet_seq::type_id::create($sformatf("sparse_packet_%0d", p));
+      sparse_sequence.agent_config = agent_config;
+      if (!sparse_sequence.randomize() with { num_beats inside {[min_beats:max_beats]}; })
         `uvm_fatal("RAND", "sparse packet sequence randomization failed")
-      seq.start(m_sequencer, this);
+      sparse_sequence.start(m_sequencer, this);
     end
     else begin
-      axi_stream_packet_seq seq;
-      seq = axi_stream_packet_seq::type_id::create($sformatf("pkt_%0d", p));
-      seq.cfg = cfg;
-      if (!seq.randomize() with { num_beats inside {[min_beats:max_beats]}; })
+      axi_stream_packet_seq packet_sequence;
+      packet_sequence = axi_stream_packet_seq::type_id::create($sformatf("packet_%0d", p));
+      packet_sequence.agent_config = agent_config;
+      if (!packet_sequence.randomize() with { num_beats inside {[min_beats:max_beats]}; })
         `uvm_fatal("RAND", "packet sequence randomization failed")
-      seq.start(m_sequencer, this);
+      packet_sequence.start(m_sequencer, this);
     end
   end
 endtask : body

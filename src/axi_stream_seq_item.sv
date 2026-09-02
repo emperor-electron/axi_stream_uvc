@@ -23,7 +23,7 @@
 class axi_stream_seq_item extends uvm_sequence_item;
 
   // ---- Link geometry. Not rand: these describe the link the beat is
-  // for, and are normally filled in from `cfg` by pre_randomize().
+  // for, and are normally filled in from `agent_config` by pre_randomize().
   int unsigned data_bytes = 4;
   int unsigned id_width   = 0;
   int unsigned dest_width = 0;
@@ -47,7 +47,7 @@ class axi_stream_seq_item extends uvm_sequence_item;
   // Optional handle to the agent's config. When set (the sequence base
   // class does this for you), pre_randomize() adopts its geometry, so a
   // sequence never has to restate the link's widths.
-  axi_stream_config cfg;
+  axi_stream_config agent_config;
 
   // ---- Wire content -------------------------------------------------
   rand byte unsigned      tdata[];   // tdata[0] is TDATA[7:0]
@@ -123,9 +123,9 @@ class axi_stream_seq_item extends uvm_sequence_item;
   extern function new(string name = "axi_stream_seq_item");
 
   // Adopt a link's geometry, so the constraints above size and mask this
-  // beat correctly. Called automatically from pre_randomize() when `cfg`
+  // beat correctly. Called automatically from pre_randomize() when `agent_config`
   // is set; call it directly when building a beat without randomizing.
-  extern function void set_geometry(axi_stream_config c);
+  extern function void set_geometry(axi_stream_config link_config);
 
   // Size the payload arrays for the current geometry without touching
   // their contents' randomness -- needed when a beat is assembled by
@@ -152,21 +152,21 @@ function axi_stream_seq_item::new(string name = "axi_stream_seq_item");
   allocate();
 endfunction : new
 
-function void axi_stream_seq_item::set_geometry(axi_stream_config c);
-  if (c == null)
+function void axi_stream_seq_item::set_geometry(axi_stream_config link_config);
+  if (link_config == null)
     return;
-  data_bytes = c.data_bytes;
-  id_width   = c.id_width;
-  dest_width = c.dest_width;
-  user_width = c.user_width;
-  has_tkeep  = c.has_tkeep;
-  has_tstrb  = c.has_tstrb;
-  has_tlast  = c.has_tlast;
-  has_tid    = c.has_tid;
-  has_tdest  = c.has_tdest;
-  has_tuser  = c.has_tuser;
-  min_delay  = c.min_beat_delay;
-  max_delay  = c.max_beat_delay;
+  data_bytes = link_config.data_bytes;
+  id_width   = link_config.id_width;
+  dest_width = link_config.dest_width;
+  user_width = link_config.user_width;
+  has_tkeep  = link_config.has_tkeep;
+  has_tstrb  = link_config.has_tstrb;
+  has_tlast  = link_config.has_tlast;
+  has_tid    = link_config.has_tid;
+  has_tdest  = link_config.has_tdest;
+  has_tuser  = link_config.has_tuser;
+  min_delay  = link_config.min_beat_delay;
+  max_delay  = link_config.max_beat_delay;
   allocate();
 endfunction : set_geometry
 
@@ -177,7 +177,7 @@ function void axi_stream_seq_item::allocate();
 endfunction : allocate
 
 function void axi_stream_seq_item::pre_randomize();
-  set_geometry(cfg);
+  set_geometry(agent_config);
 endfunction : pre_randomize
 
 function axi_stream_byte_type_e axi_stream_seq_item::byte_type(int unsigned index);
@@ -243,7 +243,7 @@ function void axi_stream_seq_item::do_copy(uvm_object rhs);
   min_delay    = rhs_.min_delay;
   max_delay    = rhs_.max_delay;
   dense        = rhs_.dense;
-  cfg          = rhs_.cfg;
+  agent_config          = rhs_.agent_config;
   tdata        = new [rhs_.tdata.size()] (rhs_.tdata);
   tkeep        = new [rhs_.tkeep.size()] (rhs_.tkeep);
   tstrb        = new [rhs_.tstrb.size()] (rhs_.tstrb);

@@ -18,7 +18,7 @@ class axi_stream_coverage extends uvm_subscriber #(axi_stream_seq_item);
 
   `uvm_component_utils(axi_stream_coverage)
 
-  axi_stream_config cfg;
+  axi_stream_config agent_config;
 
   // Sampled fields. Covergroups cannot sample a dynamic array directly,
   // so the interesting summaries are reduced to scalars first.
@@ -90,7 +90,7 @@ class axi_stream_coverage extends uvm_subscriber #(axi_stream_seq_item);
 
   extern function new(string name = "axi_stream_coverage", uvm_component parent = null);
   extern virtual function void build_phase(uvm_phase phase);
-  extern virtual function void write(axi_stream_seq_item t);
+  extern virtual function void write(axi_stream_seq_item beat);
 
 endclass : axi_stream_coverage
 
@@ -102,35 +102,35 @@ endfunction : new
 
 function void axi_stream_coverage::build_phase(uvm_phase phase);
   super.build_phase(phase);
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "cfg", cfg))
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "agent_config", agent_config))
     `uvm_fatal("NOCFG", "no axi_stream_config set in the config DB")
 endfunction : build_phase
 
-function void axi_stream_coverage::write(axi_stream_seq_item t);
-  if (!cfg.coverage_enable)
+function void axi_stream_coverage::write(axi_stream_seq_item beat);
+  if (!agent_config.coverage_enable)
     return;
 
-  cov_data_bytes = t.data_bytes;
-  cov_tlast      = t.tlast;
-  cov_stall      = t.stall_cycles;
-  cov_tid        = t.tid;
-  cov_tdest      = t.tdest;
+  cov_data_bytes = beat.data_bytes;
+  cov_tlast      = beat.tlast;
+  cov_stall      = beat.stall_cycles;
+  cov_tid        = beat.tid;
+  cov_tdest      = beat.tdest;
 
-  case (t.num_data_bytes())
+  case (beat.num_data_bytes())
     0                       : cov_occupancy = OCC_EMPTY;
     1                       : cov_occupancy = OCC_SINGLE;
-    t.data_bytes            : cov_occupancy = OCC_FULL;
+    beat.data_bytes            : cov_occupancy = OCC_FULL;
     default                 : cov_occupancy = OCC_PARTIAL;
   endcase
 
   cov_sparse   = 1'b0;
   cov_position = 1'b0;
-  foreach (t.tkeep[i]) begin
-    if (t.byte_type(i) != AXIS_BYTE_DATA)     cov_sparse   = 1'b1;
-    if (t.byte_type(i) == AXIS_BYTE_POSITION) cov_position = 1'b1;
+  foreach (beat.tkeep[i]) begin
+    if (beat.byte_type(i) != AXIS_BYTE_DATA)     cov_sparse   = 1'b1;
+    if (beat.byte_type(i) == AXIS_BYTE_POSITION) cov_position = 1'b1;
   end
 
   cg_beat.sample();
-  if (cfg.has_tid || cfg.has_tdest)
+  if (agent_config.has_tid || agent_config.has_tdest)
     cg_routing.sample();
 endfunction : write

@@ -26,22 +26,22 @@
 // describe when a beat happened, not what it carried; a FIFO is free to
 // re-pace traffic and still be correct.
 
-`uvm_analysis_imp_decl(_src_beat)
-`uvm_analysis_imp_decl(_snk_beat)
-`uvm_analysis_imp_decl(_src_pkt)
-`uvm_analysis_imp_decl(_snk_pkt)
+`uvm_analysis_imp_decl(_source_beat)
+`uvm_analysis_imp_decl(_sink_beat)
+`uvm_analysis_imp_decl(_source_packet)
+`uvm_analysis_imp_decl(_sink_packet)
 
 class axi_stream_scoreboard extends uvm_scoreboard;
 
   `uvm_component_utils(axi_stream_scoreboard)
 
-  uvm_analysis_imp_src_beat #(axi_stream_seq_item, axi_stream_scoreboard) src_beat_export;
-  uvm_analysis_imp_snk_beat #(axi_stream_seq_item, axi_stream_scoreboard) snk_beat_export;
-  uvm_analysis_imp_src_pkt  #(axi_stream_packet,   axi_stream_scoreboard) src_pkt_export;
-  uvm_analysis_imp_snk_pkt  #(axi_stream_packet,   axi_stream_scoreboard) snk_pkt_export;
+  uvm_analysis_imp_source_beat   #(axi_stream_seq_item, axi_stream_scoreboard) source_beat_export;
+  uvm_analysis_imp_sink_beat     #(axi_stream_seq_item, axi_stream_scoreboard) sink_beat_export;
+  uvm_analysis_imp_source_packet #(axi_stream_packet,   axi_stream_scoreboard) source_packet_export;
+  uvm_analysis_imp_sink_packet   #(axi_stream_packet,   axi_stream_scoreboard) sink_packet_export;
 
   local axi_stream_seq_item m_beats_in [$];
-  local axi_stream_packet   m_pkts_in  [$];
+  local axi_stream_packet   m_packets_in  [$];
 
   int unsigned num_beats_matched   = 0;
   int unsigned num_beats_failed    = 0;
@@ -61,10 +61,10 @@ class axi_stream_scoreboard extends uvm_scoreboard;
   // Forget all outstanding expectations, for use after a disturbance.
   extern virtual function void flush();
 
-  extern virtual function void write_src_beat(axi_stream_seq_item t);
-  extern virtual function void write_snk_beat(axi_stream_seq_item t);
-  extern virtual function void write_src_pkt(axi_stream_packet t);
-  extern virtual function void write_snk_pkt(axi_stream_packet t);
+  extern virtual function void write_source_beat(axi_stream_seq_item beat);
+  extern virtual function void write_sink_beat(axi_stream_seq_item beat);
+  extern virtual function void write_source_packet(axi_stream_packet packet);
+  extern virtual function void write_sink_packet(axi_stream_packet packet);
   extern virtual function void check_phase(uvm_phase phase);
   extern virtual function void report_phase(uvm_phase phase);
 
@@ -73,73 +73,73 @@ endclass : axi_stream_scoreboard
 function axi_stream_scoreboard::new(string name = "axi_stream_scoreboard",
                                     uvm_component parent = null);
   super.new(name, parent);
-  src_beat_export = new("src_beat_export", this);
-  snk_beat_export = new("snk_beat_export", this);
-  src_pkt_export  = new("src_pkt_export",  this);
-  snk_pkt_export  = new("snk_pkt_export",  this);
+  source_beat_export = new("source_beat_export", this);
+  sink_beat_export = new("sink_beat_export", this);
+  source_packet_export  = new("source_packet_export",  this);
+  sink_packet_export  = new("sink_packet_export",  this);
 endfunction : new
 
 function bit axi_stream_scoreboard::is_drained();
-  return (m_beats_in.size() == 0) && (m_pkts_in.size() == 0);
+  return (m_beats_in.size() == 0) && (m_packets_in.size() == 0);
 endfunction : is_drained
 
 function void axi_stream_scoreboard::flush();
-  if (m_beats_in.size() != 0 || m_pkts_in.size() != 0)
+  if (m_beats_in.size() != 0 || m_packets_in.size() != 0)
     `uvm_info("SB", $sformatf("flushing %0d pending beat(s) and %0d pending packet(s)",
-                              m_beats_in.size(), m_pkts_in.size()), UVM_MEDIUM)
+                              m_beats_in.size(), m_packets_in.size()), UVM_MEDIUM)
   m_beats_in.delete();
-  m_pkts_in.delete();
+  m_packets_in.delete();
 endfunction : flush
 
-function void axi_stream_scoreboard::write_src_beat(axi_stream_seq_item t);
+function void axi_stream_scoreboard::write_source_beat(axi_stream_seq_item beat);
   if (!checking_enabled) return;
-  m_beats_in.push_back(t);
-endfunction : write_src_beat
+  m_beats_in.push_back(beat);
+endfunction : write_source_beat
 
-function void axi_stream_scoreboard::write_snk_beat(axi_stream_seq_item t);
+function void axi_stream_scoreboard::write_sink_beat(axi_stream_seq_item beat);
   axi_stream_seq_item expected;
   if (!checking_enabled) return;
   if (m_beats_in.size() == 0) begin
     `uvm_error("SB_BEAT", $sformatf("beat came out of the DUT that never went in: %s",
-                                    t.convert2string()))
+                                    beat.convert2string()))
     num_beats_failed++;
     return;
   end
   expected = m_beats_in.pop_front();
-  if (!t.compare(expected)) begin
+  if (!beat.compare(expected)) begin
     `uvm_error("SB_BEAT", $sformatf("beat mismatch\n  expected: %s\n  actual  : %s",
-                                    expected.convert2string(), t.convert2string()))
+                                    expected.convert2string(), beat.convert2string()))
     num_beats_failed++;
   end
   else begin
     num_beats_matched++;
   end
-endfunction : write_snk_beat
+endfunction : write_sink_beat
 
-function void axi_stream_scoreboard::write_src_pkt(axi_stream_packet t);
+function void axi_stream_scoreboard::write_source_packet(axi_stream_packet packet);
   if (!checking_enabled) return;
-  m_pkts_in.push_back(t);
-endfunction : write_src_pkt
+  m_packets_in.push_back(packet);
+endfunction : write_source_packet
 
-function void axi_stream_scoreboard::write_snk_pkt(axi_stream_packet t);
+function void axi_stream_scoreboard::write_sink_packet(axi_stream_packet packet);
   axi_stream_packet expected;
   if (!checking_enabled) return;
-  if (m_pkts_in.size() == 0) begin
+  if (m_packets_in.size() == 0) begin
     `uvm_error("SB_PKT", $sformatf("packet came out of the DUT that never went in: %s",
-                                   t.convert2string()))
+                                   packet.convert2string()))
     num_pkts_failed++;
     return;
   end
-  expected = m_pkts_in.pop_front();
-  if (!t.compare(expected)) begin
+  expected = m_packets_in.pop_front();
+  if (!packet.compare(expected)) begin
     `uvm_error("SB_PKT", $sformatf("packet mismatch\n  expected: %s\n  actual  : %s",
-                                   expected.convert2string(), t.convert2string()))
+                                   expected.convert2string(), packet.convert2string()))
     num_pkts_failed++;
   end
   else begin
     num_pkts_matched++;
   end
-endfunction : write_snk_pkt
+endfunction : write_sink_packet
 
 // Anything still queued at the end went into the DUT and never came
 // out. With a FIFO and a sink that keeps draining, that is a lost
@@ -150,9 +150,9 @@ function void axi_stream_scoreboard::check_phase(uvm_phase phase);
   if (m_beats_in.size() != 0)
     `uvm_error("SB_LEAK", $sformatf("%0d beat(s) entered the DUT and never came out",
                                     m_beats_in.size()))
-  if (m_pkts_in.size() != 0)
+  if (m_packets_in.size() != 0)
     `uvm_error("SB_LEAK", $sformatf("%0d packet(s) entered the DUT and never came out",
-                                    m_pkts_in.size()))
+                                    m_packets_in.size()))
   if ((num_beats_matched == 0) && (num_beats_failed == 0))
     `uvm_error("SB_EMPTY", "no beats were checked at all -- the link never carried traffic")
 endfunction : check_phase

@@ -67,31 +67,32 @@ my_dut u_dut (.aclk, .aresetn,
 
 initial
   uvm_config_db#(virtual axi_stream_if #(8, 8, 4, 8))::set(
-      null, "uvm_test_top.env.agt", "vif", axis);
+      null, "uvm_test_top.env.master_agent", "vif", axis);
 ```
 
 ```systemverilog
 // In the env -- one agent, parameterized to match the interface.
-axi_stream_agent #(.DATA_BYTES(8), .ID_WIDTH(8), .DEST_WIDTH(4), .USER_WIDTH(8)) agt;
+axi_stream_agent #(.DATA_BYTES(8), .ID_WIDTH(8), .DEST_WIDTH(4), .USER_WIDTH(8)) master_agent;
 
 function void build_phase(uvm_phase phase);
-  axi_stream_config cfg = axi_stream_config::type_id::create("cfg");
-  cfg.role = AXIS_MASTER;              // source transfers into the DUT
-  cfg.set_beat_delay(0, 3);            // 0-3 idle cycles between beats
-  uvm_config_db#(axi_stream_config)::set(this, "agt", "cfg", cfg);
-  agt = axi_stream_agent #(8, 8, 4, 8)::type_id::create("agt", this);
+  axi_stream_config agent_config = axi_stream_config::type_id::create("agent_config");
+  agent_config.role = AXIS_MASTER;         // source transfers into the DUT
+  agent_config.set_beat_delay(0, 3);       // 0-3 idle cycles between beats
+  uvm_config_db#(axi_stream_config)::set(this, "master_agent", "agent_config", agent_config);
+  master_agent = axi_stream_agent #(8, 8, 4, 8)::type_id::create("master_agent", this);
 endfunction
 ```
 
 ```systemverilog
 // In a test -- sequences are unparameterized, so this is the same code
 // whatever the link width is.
-axi_stream_random_seq seq = axi_stream_random_seq::type_id::create("seq");
-assert (seq.randomize() with { num_packets == 20; });
-seq.start(agt.sqr);
+axi_stream_random_seq random_sequence =
+    axi_stream_random_seq::type_id::create("random_sequence");
+assert (random_sequence.randomize() with { num_packets == 20; });
+random_sequence.start(master_agent.sequencer);
 ```
 
-The agent reconciles `cfg` with its own parameters at build time, so a config
+The agent reconciles `agent_config` with its own parameters at build time, so a config
 that disagrees with the interface it is attached to is reported rather than
 silently truncating payloads.
 
@@ -151,6 +152,24 @@ to be load-bearing rather than merely present.
 
 New coverpoints or formal properties belong inside that guard too.
 
+### Naming
+
+Class handles are spelled out: `master_driver`, not `mst_drv`; `monitor`, not
+`mon`; `sequencer`, `coverage`, `scoreboard`, `master_agent`. Two names cannot
+be, because SystemVerilog reserves them:
+
+| Wanted | Reserved by | Used instead |
+| --- | --- | --- |
+| `config` | `config` / `endconfig` | `agent_config`, `master_config`, `slave_config` |
+| `sequence` | assertion sequences | `random_sequence`, `packet_sequence`, `directed_sequence` |
+
+Virtual-interface handles stay `vif` / `vif_src` / `vif_snk`: an interface is
+not a class, and `vif` is near-universal in UVM. Say the word if you want those
+spelled out too.
+
+Config-DB field names track the handles they fill, so the key is
+`"agent_config"`, not `"cfg"`.
+
 ### Optional signals
 
 TID/TDEST/TUSER presence follows from the widths: a width of `0` means the link
@@ -171,7 +190,7 @@ structurally impossible for a model to create a combinational TREADY-from-TVALID
 path and hide a deadlock real hardware would hit.
 
 ```systemverilog
-cfg.set_ready_mode(AXIS_READY_BURST, .burst_beats(8), .stall_cycles(3));
+agent_config.set_ready_mode(AXIS_READY_BURST, .burst_beats(8), .stall_cycles(3));
 ```
 
 | Mode | Behaviour |
@@ -195,7 +214,7 @@ AXIS_READY_DELAY(0..8)           TREADY high  32 of 183 cycles (17%)
 
 For anything these do not cover — a recorded trace, a credit counter,
 backpressure on one TDEST only — extend `axi_stream_ready_policy`, override
-`next_ready()`, and assign it to `cfg.ready_policy`. The policy class is
+`next_ready()`, and assign it to `agent_config.ready_policy`. The policy class is
 deliberately unparameterized, so one custom model works against every link in
 the testbench, and the slave driver re-reads the handle every cycle so a test
 can swap models mid-run:
@@ -208,7 +227,7 @@ env.set_backpressure(AXIS_READY_ALWAYS);  // and let it drain
 
 Source-side pacing is the counterpart: each beat's `delay` field is the number
 of idle cycles before it is offered, drawn from
-`cfg.min_beat_delay..max_beat_delay`. Leaving both at 0 streams back-to-back at
+`agent_config.min_beat_delay..max_beat_delay`. Leaving both at 0 streams back-to-back at
 full rate.
 
 ## Protocol checks

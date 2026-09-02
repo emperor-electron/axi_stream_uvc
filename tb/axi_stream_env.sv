@@ -25,10 +25,10 @@
 
 virtual class axi_stream_env_base extends uvm_env;
 
-  axi_stream_config     mst_cfg;   // source end: drives the DUT's slave port
-  axi_stream_config     slv_cfg;   // sink end:   backpressures the DUT's master port
-  axi_stream_sequencer  mst_sqr;   // published by the parameterized subclass
-  axi_stream_scoreboard sb;
+  axi_stream_config     master_config;      // source end: drives the DUT's slave port
+  axi_stream_config     slave_config;       // sink end:   backpressures the DUT's master port
+  axi_stream_sequencer  master_sequencer;   // published by the parameterized subclass
+  axi_stream_scoreboard scoreboard;
 
   // Human-readable link name, e.g. "16B/ID8/DEST8/USER16", used in log
   // lines so a failure names the link it came from.
@@ -60,15 +60,15 @@ function void axi_stream_env_base::build_phase(uvm_phase phase);
   // Configs are created here rather than in the test so that a test only
   // has to override what it cares about, in its own build_phase, before
   // super.build_phase() reaches the agents.
-  if (mst_cfg == null) begin
-    mst_cfg      = axi_stream_config::type_id::create("mst_cfg");
-    mst_cfg.role = AXIS_MASTER;
+  if (master_config == null) begin
+    master_config      = axi_stream_config::type_id::create("master_config");
+    master_config.role = AXIS_MASTER;
   end
-  if (slv_cfg == null) begin
-    slv_cfg      = axi_stream_config::type_id::create("slv_cfg");
-    slv_cfg.role = AXIS_SLAVE;
+  if (slave_config == null) begin
+    slave_config      = axi_stream_config::type_id::create("slave_config");
+    slave_config.role = AXIS_SLAVE;
   end
-  sb = axi_stream_scoreboard::type_id::create("sb", this);
+  scoreboard = axi_stream_scoreboard::type_id::create("scoreboard", this);
 endfunction : build_phase
 
 function void axi_stream_env_base::set_backpressure(axi_stream_ready_mode_e mode,
@@ -78,12 +78,12 @@ function void axi_stream_env_base::set_backpressure(axi_stream_ready_mode_e mode
                                                     int unsigned burst_beats  = 4,
                                                     int unsigned delay_min    = 0,
                                                     int unsigned delay_max    = 4);
-  slv_cfg.set_ready_mode(mode, percent, ready_cycles, stall_cycles,
+  slave_config.set_ready_mode(mode, percent, ready_cycles, stall_cycles,
                          burst_beats, delay_min, delay_max);
 endfunction : set_backpressure
 
 function void axi_stream_env_base::set_pacing(int unsigned min_cycles, int unsigned max_cycles);
-  mst_cfg.set_beat_delay(min_cycles, max_cycles);
+  master_config.set_beat_delay(min_cycles, max_cycles);
 endfunction : set_pacing
 
 
@@ -104,8 +104,8 @@ class axi_stream_env #(
 
   `uvm_component_param_utils(this_type)
 
-  agent_t mst_agt;   // on the link into the DUT
-  agent_t slv_agt;   // on the link out of the DUT
+  agent_t master_agent;   // on the link into the DUT
+  agent_t slave_agent;    // on the link out of the DUT
 
   vif_t vif_src;     // DUT slave port  (UVC drives TVALID + payload)
   vif_t vif_snk;     // DUT master port (UVC drives TREADY)
@@ -136,13 +136,13 @@ function void axi_stream_env::build_phase(uvm_phase phase);
   // Each agent gets its own config and its own end of the link. The
   // agent reconciles these widths with its parameters, so a config that
   // disagrees is caught rather than silently truncating payloads.
-  uvm_config_db#(axi_stream_config)::set(this, "mst_agt", "cfg", mst_cfg);
-  uvm_config_db#(axi_stream_config)::set(this, "slv_agt", "cfg", slv_cfg);
-  uvm_config_db#(vif_t)::set(this, "mst_agt", "vif", vif_src);
-  uvm_config_db#(vif_t)::set(this, "slv_agt", "vif", vif_snk);
+  uvm_config_db#(axi_stream_config)::set(this, "master_agent", "agent_config", master_config);
+  uvm_config_db#(axi_stream_config)::set(this, "slave_agent", "agent_config", slave_config);
+  uvm_config_db#(vif_t)::set(this, "master_agent", "vif", vif_src);
+  uvm_config_db#(vif_t)::set(this, "slave_agent", "vif", vif_snk);
 
-  mst_agt = agent_t::type_id::create("mst_agt", this);
-  slv_agt = agent_t::type_id::create("slv_agt", this);
+  master_agent = agent_t::type_id::create("master_agent", this);
+  slave_agent = agent_t::type_id::create("slave_agent", this);
 endfunction : build_phase
 
 function void axi_stream_env::connect_phase(uvm_phase phase);
@@ -150,13 +150,13 @@ function void axi_stream_env::connect_phase(uvm_phase phase);
 
   // Publish the sequencer through the unparameterized base, so tests can
   // reach it without knowing this link's width.
-  mst_sqr = mst_agt.sqr;
+  master_sequencer = master_agent.sequencer;
 
   // Both ends feed the scoreboard: what the UVC drove in, and what the
   // DUT gave back. Both streams come from monitors, never from drivers,
   // so the check is against what the wires actually did.
-  mst_agt.mon.ap.connect(sb.src_beat_export);
-  slv_agt.mon.ap.connect(sb.snk_beat_export);
-  mst_agt.mon.pkt_ap.connect(sb.src_pkt_export);
-  slv_agt.mon.pkt_ap.connect(sb.snk_pkt_export);
+  master_agent.monitor.beat_analysis_port.connect(scoreboard.source_beat_export);
+  slave_agent.monitor.beat_analysis_port.connect(scoreboard.sink_beat_export);
+  master_agent.monitor.packet_analysis_port.connect(scoreboard.source_packet_export);
+  slave_agent.monitor.packet_analysis_port.connect(scoreboard.sink_packet_export);
 endfunction : connect_phase

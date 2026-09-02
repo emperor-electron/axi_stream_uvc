@@ -23,12 +23,12 @@ class example_env extends uvm_env;
 
   `uvm_component_utils(example_env)
 
-  example_agent_t    mst_agt;   // drives the DUT's slave port
-  example_agent_t    slv_agt;   // backpressures the DUT's master port
-  example_scoreboard sb;
+  example_agent_t    master_agent;   // drives the DUT's slave port
+  example_agent_t    slave_agent;    // backpressures the DUT's master port
+  example_scoreboard scoreboard;
 
-  axi_stream_config mst_cfg;
-  axi_stream_config slv_cfg;
+  axi_stream_config master_config;
+  axi_stream_config slave_config;
 
   example_vif_t vif_in;
   example_vif_t vif_out;
@@ -57,45 +57,45 @@ function void example_env::build_phase(uvm_phase phase);
   if (!uvm_config_db#(example_vif_t)::get(this, "", "vif_out", vif_out))
     `uvm_fatal("NOVIF", {"no 'vif_out' in the config DB -- check that the type parameters ",
                          "in example_tb_top's set() match example_vif_t exactly"})
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "mst_cfg", mst_cfg))
-    `uvm_fatal("NOCFG", "no 'mst_cfg' in the config DB")
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "slv_cfg", slv_cfg))
-    `uvm_fatal("NOCFG", "no 'slv_cfg' in the config DB")
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "master_config", master_config))
+    `uvm_fatal("NOCFG", "no 'master_config' in the config DB")
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "slave_config", slave_config))
+    `uvm_fatal("NOCFG", "no 'slave_config' in the config DB")
 
   // ---------------------------------------------------------------------
   // STEP 2 -- give each agent its own config and its own end of the
   //           link. Each agent expects exactly two things under its own
-  //           instance name: "cfg" and "vif".
+  //           instance name: "agent_config" and "vif".
   //
   // The agent cross-checks the config's widths against its own type
   // parameters at build time, so a config that disagrees is reported
   // rather than silently truncating payloads.
   // ---------------------------------------------------------------------
-  uvm_config_db#(axi_stream_config)::set(this, "mst_agt", "cfg", mst_cfg);
-  uvm_config_db#(axi_stream_config)::set(this, "slv_agt", "cfg", slv_cfg);
-  uvm_config_db#(example_vif_t)::set(this, "mst_agt", "vif", vif_in);
-  uvm_config_db#(example_vif_t)::set(this, "slv_agt", "vif", vif_out);
+  uvm_config_db#(axi_stream_config)::set(this, "master_agent", "agent_config", master_config);
+  uvm_config_db#(axi_stream_config)::set(this, "slave_agent", "agent_config", slave_config);
+  uvm_config_db#(example_vif_t)::set(this, "master_agent", "vif", vif_in);
+  uvm_config_db#(example_vif_t)::set(this, "slave_agent", "vif", vif_out);
 
   // ---------------------------------------------------------------------
   // STEP 3 -- build the agents and the scoreboard.
   // ---------------------------------------------------------------------
-  mst_agt = example_agent_t::type_id::create("mst_agt", this);
-  slv_agt = example_agent_t::type_id::create("slv_agt", this);
-  sb      = example_scoreboard::type_id::create("sb", this);
+  master_agent = example_agent_t::type_id::create("master_agent", this);
+  slave_agent = example_agent_t::type_id::create("slave_agent", this);
+  scoreboard      = example_scoreboard::type_id::create("scoreboard", this);
 endfunction : build_phase
 
 function void example_env::connect_phase(uvm_phase phase);
   super.connect_phase(phase);
 
   // ---------------------------------------------------------------------
-  // STEP 4 -- subscribe to the monitors. Use pkt_ap for frames or ap for
+  // STEP 4 -- subscribe to the monitors. Use packet_analysis_port for frames or beat_analysis_port for
   //           individual beats; see example_scoreboard.sv for which to
   //           pick. Both monitors publish regardless of role, so a
   //           passive agent still feeds checks and coverage.
   // ---------------------------------------------------------------------
-  mst_agt.mon.pkt_ap.connect(sb.in_pkt_export);
-  slv_agt.mon.pkt_ap.connect(sb.out_pkt_export);
+  master_agent.monitor.packet_analysis_port.connect(scoreboard.in_packet_export);
+  slave_agent.monitor.packet_analysis_port.connect(scoreboard.out_packet_export);
 
   // The scoreboard only needs this for its clock.
-  sb.vif = vif_in;
+  scoreboard.vif = vif_in;
 endfunction : connect_phase

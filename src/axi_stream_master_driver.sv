@@ -52,7 +52,7 @@ class axi_stream_master_driver #(
   `uvm_component_param_utils(this_type)
 
   vif_t             vif;
-  axi_stream_config cfg;
+  axi_stream_config agent_config;
 
   // Beats offered and beats actually transferred; reported at the end of
   // the run so a hung link is obvious without opening a waveform.
@@ -91,7 +91,7 @@ function void axi_stream_master_driver::build_phase(uvm_phase phase);
     `uvm_fatal("NOVIF", $sformatf(
         "no virtual axi_stream_if #(%0d,%0d,%0d,%0d) set in the config DB for %s",
         DATA_BYTES, ID_WIDTH, DEST_WIDTH, USER_WIDTH, get_full_name()))
-  if (!uvm_config_db#(axi_stream_config)::get(this, "", "cfg", cfg))
+  if (!uvm_config_db#(axi_stream_config)::get(this, "", "agent_config", agent_config))
     `uvm_fatal("NOCFG", "no axi_stream_config set in the config DB")
   if (USER_WIDTH > AXIS_MAX_USER_WIDTH)
     `uvm_fatal("USERW", $sformatf(
@@ -182,16 +182,16 @@ task axi_stream_master_driver::drive_payload(axi_stream_seq_item item);
     data_v[i*8 +: 8] = item.tdata[i];
     keep_v[i]        = item.tkeep[i];
     // A link with no TSTRB implies every kept byte is a data byte.
-    strb_v[i]        = cfg.has_tstrb ? item.tstrb[i] : item.tkeep[i];
+    strb_v[i]        = agent_config.has_tstrb ? item.tstrb[i] : item.tkeep[i];
   end
 
   vif.mst_cb.tdata  <= data_v;
-  vif.mst_cb.tkeep  <= cfg.has_tkeep ? keep_v : '1;
+  vif.mst_cb.tkeep  <= agent_config.has_tkeep ? keep_v : '1;
   vif.mst_cb.tstrb  <= strb_v;
-  vif.mst_cb.tlast  <= cfg.has_tlast ? item.tlast : 1'b0;
-  vif.mst_cb.tid    <= cfg.has_tid   ? item.tid  [0 +: TID_W]   : '0;
-  vif.mst_cb.tdest  <= cfg.has_tdest ? item.tdest[0 +: TDEST_W] : '0;
-  vif.mst_cb.tuser  <= cfg.has_tuser ? item.tuser[0 +: TUSER_W] : '0;
+  vif.mst_cb.tlast  <= agent_config.has_tlast ? item.tlast : 1'b0;
+  vif.mst_cb.tid    <= agent_config.has_tid   ? item.tid  [0 +: TID_W]   : '0;
+  vif.mst_cb.tdest  <= agent_config.has_tdest ? item.tdest[0 +: TDEST_W] : '0;
+  vif.mst_cb.tuser  <= agent_config.has_tuser ? item.tuser[0 +: TUSER_W] : '0;
   vif.mst_cb.tvalid <= 1'b1;
 endtask : drive_payload
 

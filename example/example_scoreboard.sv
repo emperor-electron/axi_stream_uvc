@@ -14,11 +14,11 @@
 // Each monitor offers two analysis ports, and which you subscribe to is
 // a real design choice:
 //
-//   mon.ap      one axi_stream_seq_item per handshake. Every field
+//   monitor.beat_analysis_port      one axi_stream_seq_item per handshake. Every field
 //               exactly as it appeared on the wire, including TUSER and
 //               the precise TKEEP/TSTRB pattern. Use it for cycle-level
 //               checks and coverage.
-//   mon.pkt_ap  one axi_stream_packet per TLAST. Comparing these
+//   monitor.packet_analysis_port  one axi_stream_packet per TLAST. Comparing these
 //               compares the flattened payload and routing, ignoring how
 //               the frame was blocked into beats or paced -- so it keeps
 //               working if you later put a width converter or a FIFO in
@@ -28,15 +28,15 @@
 // check is against what the wires actually did rather than what the
 // testbench meant to do.
 
-`uvm_analysis_imp_decl(_in_pkt)
-`uvm_analysis_imp_decl(_out_pkt)
+`uvm_analysis_imp_decl(_in_packet)
+`uvm_analysis_imp_decl(_out_packet)
 
 class example_scoreboard extends uvm_scoreboard;
 
   `uvm_component_utils(example_scoreboard)
 
-  uvm_analysis_imp_in_pkt  #(axi_stream_packet, example_scoreboard) in_pkt_export;
-  uvm_analysis_imp_out_pkt #(axi_stream_packet, example_scoreboard) out_pkt_export;
+  uvm_analysis_imp_in_packet  #(axi_stream_packet, example_scoreboard) in_packet_export;
+  uvm_analysis_imp_out_packet #(axi_stream_packet, example_scoreboard) out_packet_export;
 
   // Only ever used for its clock, so wait_until_drained() can count
   // cycles. Assigned by the env.
@@ -48,8 +48,8 @@ class example_scoreboard extends uvm_scoreboard;
   int unsigned num_failed  = 0;
 
   extern function new(string name = "example_scoreboard", uvm_component parent = null);
-  extern virtual function void write_in_pkt(axi_stream_packet t);
-  extern virtual function void write_out_pkt(axi_stream_packet t);
+  extern virtual function void write_in_packet(axi_stream_packet packet);
+  extern virtual function void write_out_packet(axi_stream_packet packet);
   extern virtual function bit is_drained();
   extern virtual task wait_until_drained(int unsigned timeout_cycles = 5000);
   extern virtual function void check_phase(uvm_phase phase);
@@ -59,33 +59,33 @@ endclass : example_scoreboard
 
 function example_scoreboard::new(string name = "example_scoreboard", uvm_component parent = null);
   super.new(name, parent);
-  in_pkt_export  = new("in_pkt_export",  this);
-  out_pkt_export = new("out_pkt_export", this);
+  in_packet_export  = new("in_packet_export",  this);
+  out_packet_export = new("out_packet_export", this);
 endfunction : new
 
-function void example_scoreboard::write_in_pkt(axi_stream_packet t);
-  m_expected.push_back(t);
-endfunction : write_in_pkt
+function void example_scoreboard::write_in_packet(axi_stream_packet packet);
+  m_expected.push_back(packet);
+endfunction : write_in_packet
 
-function void example_scoreboard::write_out_pkt(axi_stream_packet t);
+function void example_scoreboard::write_out_packet(axi_stream_packet packet);
   axi_stream_packet expected;
   if (m_expected.size() == 0) begin
-    `uvm_error("SB", $sformatf("packet came out that never went in: %s", t.convert2string()))
+    `uvm_error("SB", $sformatf("packet came out that never went in: %s", packet.convert2string()))
     num_failed++;
     return;
   end
   expected = m_expected.pop_front();
   // compare() uses axi_stream_packet::do_compare, which checks the
   // flattened payload plus TID/TDEST.
-  if (!t.compare(expected)) begin
+  if (!packet.compare(expected)) begin
     `uvm_error("SB", $sformatf("packet mismatch\n  expected: %s\n  actual  : %s",
-                               expected.convert2string(), t.convert2string()))
+                               expected.convert2string(), packet.convert2string()))
     num_failed++;
   end
   else begin
     num_matched++;
   end
-endfunction : write_out_pkt
+endfunction : write_out_packet
 
 function bit example_scoreboard::is_drained();
   return (m_expected.size() == 0);
