@@ -90,7 +90,12 @@ class axi_stream_coverage extends uvm_subscriber #(axi_stream_seq_item);
 
   extern function new(string name = "axi_stream_coverage", uvm_component parent = null);
   extern virtual function void build_phase(uvm_phase phase);
-  extern virtual function void write(axi_stream_seq_item beat);
+  // The formal is `t`, not `beat`, because this overrides
+  // uvm_subscriber::write and SystemVerilog matches overrides by formal
+  // name -- renaming it would break any named-argument call through a
+  // base-class handle. The one place in the UVC that cannot spell a
+  // handle out.
+  extern virtual function void write(axi_stream_seq_item t);
 
 endclass : axi_stream_coverage
 
@@ -106,7 +111,8 @@ function void axi_stream_coverage::build_phase(uvm_phase phase);
     `uvm_fatal("NOCFG", "no axi_stream_config set in the config DB")
 endfunction : build_phase
 
-function void axi_stream_coverage::write(axi_stream_seq_item beat);
+function void axi_stream_coverage::write(axi_stream_seq_item t);
+  axi_stream_seq_item beat = t;
   if (!agent_config.coverage_enable)
     return;
 
