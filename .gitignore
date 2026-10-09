@@ -14,3 +14,11 @@ xsim_*.backup.log
 # Coverage
 *.ucdb
 xsim.covdb/
+
+# Frames the video file tests write out and read back. The inputs under
+# images/ are checked in; these are the artifacts.
+received_*.hex
+received_*.ppm
+received_*.pgm
+received_frame.hex
+received_frame.ppm

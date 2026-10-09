@@ -27,6 +27,11 @@ class example_env extends uvm_env;
   example_agent_t    slave_agent;    // backpressures the DUT's master port
   example_scoreboard scoreboard;
 
+  // Rebuilds video frames from the beats coming out of the DUT. It stays
+  // inert until a test gives it an axi_stream_video_format, so leaving it
+  // here costs a non-video test nothing. See example_video_test.
+  axi_stream_video_frame_collector frame_collector;
+
   axi_stream_config master_config;
   axi_stream_config slave_config;
 
@@ -82,6 +87,7 @@ function void example_env::build_phase(uvm_phase phase);
   master_agent = example_agent_t::type_id::create("master_agent", this);
   slave_agent = example_agent_t::type_id::create("slave_agent", this);
   scoreboard      = example_scoreboard::type_id::create("scoreboard", this);
+  frame_collector = axi_stream_video_frame_collector::type_id::create("frame_collector", this);
 endfunction : build_phase
 
 function void example_env::connect_phase(uvm_phase phase);
@@ -95,6 +101,14 @@ function void example_env::connect_phase(uvm_phase phase);
   // ---------------------------------------------------------------------
   master_agent.monitor.packet_analysis_port.connect(scoreboard.in_packet_export);
   slave_agent.monitor.packet_analysis_port.connect(scoreboard.out_packet_export);
+
+  // ---------------------------------------------------------------------
+  // STEP 5 -- (video only) subscribe the frame collector to the beats
+  //           coming *out* of the DUT. It takes beats, not packets,
+  //           because it needs TUSER[0] per beat to find frame
+  //           boundaries -- a packet is one line, which is not enough.
+  // ---------------------------------------------------------------------
+  slave_agent.monitor.beat_analysis_port.connect(frame_collector.analysis_export);
 
   // The scoreboard only needs this for its clock.
   scoreboard.vif = vif_in;

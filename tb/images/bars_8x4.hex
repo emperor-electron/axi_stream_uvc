@@ -1,0 +1,15 @@
+///////////////////////////////////////////////////////////////////
+// Name: bars_8x4.hex
+// Dimensions: 8x4
+// Format: RGBA8888, component 0 (R) in the least significant bits,
+//         so a pixel reads 0xAABBGGRR.
+//
+// Eight colour bars, one pixel wide, repeated on every line:
+//   white yellow cyan green magenta red blue black
+// All eight are fully opaque, so alpha is 0xFF throughout.
+///////////////////////////////////////////////////////////////////
+
+0xFFFFFFFF 0xFF00FFFF 0xFFFFFF00 0xFF00FF00 0xFFFF00FF 0xFF0000FF 0xFFFF0000 0xFF000000
+0xFFFFFFFF 0xFF00FFFF 0xFFFFFF00 0xFF00FF00 0xFFFF00FF 0xFF0000FF 0xFFFF0000 0xFF000000
+0xFFFFFFFF 0xFF00FFFF 0xFFFFFF00 0xFF00FF00 0xFFFF00FF 0xFF0000FF 0xFFFF0000 0xFF000000
+0xFFFFFFFF 0xFF00FFFF 0xFFFFFF00 0xFF00FF00 0xFFFF00FF 0xFF0000FF 0xFFFF0000 0xFF000000

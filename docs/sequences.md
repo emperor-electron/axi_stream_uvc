@@ -183,10 +183,29 @@ compares equal to the one that went in. It also compares TDATA only on lanes
 TKEEP marks as valid, because AXI4-Stream leaves a null byte's TDATA explicitly
 undefined and comparing it would manufacture failures.
 
+## Video frames
+
+Three more sequences send whole video frames, with TUSER[0] as SOF and TLAST as
+EOL:
+
+| Sequence | Sends |
+| --- | --- |
+| `axi_stream_video_frame_seq` | A frame you already have |
+| `axi_stream_video_file_seq` | A frame read from a PGM, PPM or ASCII hex file |
+| `axi_stream_video_pattern_seq` | A generated test pattern, so no file is needed |
+
+They are ordinary sequences producing ordinary beats, and like the rest of the
+library none of them mentions a width -- the frame's format says how many pixels
+share a beat and the config says how wide the link is. See
+[Video](video.md#sending-a-frame) and [Image files](image-files.md).
+
 ## Packets
 
 `axi_stream_packet` is a whole TLAST-delimited frame, published on the
 monitor's `packet_analysis_port`.
+
+A video line is a packet, since every line ends in TLAST -- so the packet view
+below checks video traffic line by line without being told anything about video.
 
 | Helper | Returns |
 | --- | --- |

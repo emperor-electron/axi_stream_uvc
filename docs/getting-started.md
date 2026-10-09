@@ -237,6 +237,47 @@ Note what is missing from that sequence: any mention of a width. See
 The slave agent needs no stimulus at all — TREADY comes from the backpressure
 policy, not from transactions.
 
+## 9. If your DUT is a video design
+
+Everything above is unchanged — video frames go out as ordinary beats. Three
+things get added: a format saying how pixels sit on TDATA, a frame, and a
+collector to rebuild the frames coming back.
+
+```systemverilog
+// In the env, alongside the scoreboard. It ignores every beat until a test
+// gives it a format, so it costs a non-video test nothing.
+frame_collector = axi_stream_video_frame_collector::type_id::create("frame_collector", this);
+...
+slave_agent.monitor.beat_analysis_port.connect(frame_collector.analysis_export);
+```
+
+```systemverilog
+// In the test. RGBA8888 at two pixels per clock is 64 bits -- an 8-byte link.
+axi_stream_video_format video_format = axi_stream_video_format::rgba8888(2);
+env.frame_collector.video_format    = video_format;
+env.frame_collector.expected_width  = 64;
+env.frame_collector.expected_height = 16;
+
+axi_stream_video_pattern_seq video_sequence;
+video_sequence = axi_stream_video_pattern_seq::type_id::create("video_sequence");
+video_sequence.video_format = video_format;
+video_sequence.pattern      = AXIS_PATTERN_BARS;
+if (!video_sequence.randomize() with { frame_width == 64; frame_height == 16; })
+  `uvm_fatal("RAND", "video sequence randomization failed")
+video_sequence.start(env.master_agent.sequencer);
+
+env.scoreboard.wait_until_drained();
+
+if (!video_sequence.frame.compare(env.frame_collector.received_frames[0]))
+  `uvm_error("VIDEO", "the frame that came back is not the one sent")
+```
+
+SOF is TUSER[0] and EOL is TLAST by default, which is the Xilinx video mapping.
+See [Video](video.md), and [Image files](image-files.md) to read the frame from a
+file instead. `example_video_test` in
+[`example/example_base_test.sv`](../example/example_base_test.sv) is this worked
+through with numbered comments.
+
 ## Common problems
 
 **`NOVIF` fatal from the agent.** The config-DB type or scope does not match.
@@ -253,3 +294,13 @@ that disagrees with the agent's `DATA_BYTES` parameter. Leave `data_bytes` at 0
 **Beats reported as lost at the end of the test.** The test ended while
 transfers were still inside the DUT. Wait for the design to drain before
 dropping your objection, as in step 8.
+
+**The video sequence refuses with "needs a TDATA width of at least N bytes".**
+The format does not fit the link. Either widen the link or lower
+`pixels_per_clock`; the message gives both numbers. See
+[Pixel formats](video.md#pixel-formats).
+
+**Video frames come back one short, or the last one never arrives.** A frame
+ends at the next SOF, so without `expected_height` the final frame has nothing
+to close it. Set `expected_height` on the collector, or call `publish_frame()`
+when you are done sending. See [Receiving a frame](video.md#receiving-a-frame).

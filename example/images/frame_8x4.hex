@@ -1,0 +1,19 @@
+///////////////////////////////////////////////////////////////////
+// Name: frame_8x4.hex
+// Dimensions: 8x4
+//
+// An 8x4 RGBA8888 frame for example_video_test. One hex token per
+// pixel, in raster order; one text line per image line. The pixel word
+// is packed with component 0 (R) in the least significant bits, so a
+// token reads 0xAABBGGRR -- which is also exactly what you will see on
+// TDATA[31:0] in the waveform.
+//
+// Line 0: a red ramp.   Line 1: a green ramp.
+// Line 2: a blue ramp.  Line 3: the three ramps added together (grey).
+// Alpha is 0xFF throughout.
+///////////////////////////////////////////////////////////////////
+
+0xFF000000 0xFF000024 0xFF000048 0xFF00006D 0xFF000091 0xFF0000B6 0xFF0000DA 0xFF0000FF
+0xFF000000 0xFF002400 0xFF004800 0xFF006D00 0xFF009100 0xFF00B600 0xFF00DA00 0xFF00FF00
+0xFF000000 0xFF240000 0xFF480000 0xFF6D0000 0xFF910000 0xFFB60000 0xFFDA0000 0xFFFF0000
+0xFF000000 0xFF242424 0xFF484848 0xFF6D6D6D 0xFF919191 0xFFB6B6B6 0xFFDADADA 0xFFFFFFFF

@@ -16,6 +16,7 @@
 #   example_base_test          random packets, 60% random backpressure  [default]
 #   example_backpressure_test  burst backpressure and a bursty source
 #   example_directed_test      a specific 21-byte payload on an 8-byte link
+#   example_video_test         video frames from images/frame_8x4.hex
 #   make regress               runs all of the above in turn
 #
 # The UVC itself is compiled through $(UVC_FILELIST) -- the same drop-in
@@ -100,7 +101,8 @@ else
   $(error Unsupported SIM=$(SIM). Supported simulators: xsim)
 endif
 
-REGRESS_TESTS ?= example_base_test example_backpressure_test example_directed_test
+REGRESS_TESTS ?= example_base_test example_backpressure_test example_directed_test \
+                 example_video_test
 
 .PHONY: all compile elab run sim waves gui clean help check-tools regress
 
@@ -192,6 +194,7 @@ regress: elab
 # hand-made and is not a build artifact, so `make clean` leaves it alone.
 clean:
 	rm -rf xsim.dir *.wdb *.jou *.log *.pb webtalk* .Xil
+	rm -f received_frame.hex received_frame.ppm
 	rm -f $(SNAPSHOT).*
 
 help:

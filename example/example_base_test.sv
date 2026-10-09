@@ -226,3 +226,170 @@ task example_directed_test::run_phase(uvm_phase phase);
 
   phase.drop_objection(this, "directed payload complete");
 endtask : run_phase
+
+
+///////////////////////////////////////////////////////////////////
+// Video frames over the same link, using the Xilinx sideband mapping:
+// TUSER[0] marks the start of a frame and TLAST the end of every line.
+//
+// ============================================================
+//  WHAT A VIDEO TEST ADDS TO THE FOUR STEPS ABOVE
+// ============================================================
+// Nothing structural. A frame is sent as ordinary beats, so the configs,
+// the agents, the backpressure model and the scoreboard above all keep
+// working untouched. Three things get added:
+//
+//   A. an axi_stream_video_format, saying how pixels sit on TDATA
+//   B. a frame to send -- from a file, or from a built-in pattern
+//   C. the env's frame collector, told the same format, so the frames
+//      coming out of the DUT can be compared against what went in
+//
+// This link is 8 bytes wide, which holds two RGBA8888 pixels exactly, so
+// the format below runs at two pixels per clock. Change EX_DATA_BYTES in
+// example_tb_pkg.sv and nothing here needs editing: the sequence asks
+// the config how wide the link is and blocks the frame to fit.
+///////////////////////////////////////////////////////////////////
+class example_video_test extends example_base_test;
+
+  `uvm_component_utils(example_video_test)
+
+  // Where the example's frame lives, relative to the directory make runs
+  // in. Override from the command line with PLUSARGS=+IMAGE_DIR=...
+  string image_dir = "images";
+
+  extern function new(string name = "example_video_test", uvm_component parent = null);
+  extern virtual task run_phase(uvm_phase phase);
+
+endclass : example_video_test
+
+function example_video_test::new(string name = "example_video_test",
+                                 uvm_component parent = null);
+  super.new(name, parent);
+endfunction : new
+
+task example_video_test::run_phase(uvm_phase phase);
+  axi_stream_video_format    video_format;
+  axi_stream_video_frame     sent_frame;
+  axi_stream_video_file_seq  file_sequence;
+  axi_stream_video_pattern_seq pattern_sequence;
+  string                     from_command_line;
+  string                     path;
+
+  phase.raise_objection(this, "sending video frames through the DUT");
+
+  if ($value$plusargs("IMAGE_DIR=%s", from_command_line))
+    image_dir = from_command_line;
+  path = {image_dir, "/frame_8x4.hex"};
+
+  // ---------------------------------------------------------------------
+  // STEP A -- describe the pixels.
+  //
+  // Two RGBA8888 pixels per clock: 4 components x 8 bits x 2 pixels = 64
+  // bits, which is this link's TDATA exactly. The named constructors
+  // cover the usual cases:
+  //
+  //   axi_stream_video_format::rgba8888(ppc)   RGBA, 8 bits per component
+  //   axi_stream_video_format::rgba(bits, ppc) RGBA at 10, 12, 16 bits...
+  //   axi_stream_video_format::rgb(bits, ppc)  three components
+  //   axi_stream_video_format::gray(bits, ppc) one component
+  //
+  // The SOF and EOL mapping is already the Xilinx one by default; set
+  // drive_sof to 0 for a link with no TUSER.
+  // ---------------------------------------------------------------------
+  video_format = axi_stream_video_format::rgba8888(2);
+
+  `uvm_info("VIDEO", $sformatf("format: %s", video_format.convert2string()), UVM_LOW)
+
+  // ---------------------------------------------------------------------
+  // STEP B -- read the frame, and tell the collector what to expect.
+  //
+  // The frame is loaded here rather than left to the sequence so that its
+  // width and height are known before the collector is programmed.
+  // Giving the collector the geometry is optional but worth doing: it
+  // lets a frame close on its last line instead of waiting for the next
+  // frame's SOF.
+  // ---------------------------------------------------------------------
+  sent_frame = axi_stream_video_frame::type_id::create("sent_frame");
+  sent_frame.video_format = video_format;
+  if (!sent_frame.load(path))
+    `uvm_fatal("VIDEO", $sformatf({"could not read '%s'. Run make from this directory, or pass ",
+                                   "PLUSARGS=+IMAGE_DIR=<path>"}, path))
+
+  env.frame_collector.video_format    = video_format;
+  env.frame_collector.expected_width  = sent_frame.width;
+  env.frame_collector.expected_height = sent_frame.height;
+
+  // ---------------------------------------------------------------------
+  // STEP C -- send it. Twice, so the gap between frames is exercised too.
+  // ---------------------------------------------------------------------
+  file_sequence = axi_stream_video_file_seq::type_id::create("file_sequence");
+  file_sequence.frame            = sent_frame;   // already loaded
+  file_sequence.line_gap_cycles  = 2;            // horizontal blanking
+  file_sequence.frame_gap_cycles = 8;            // vertical blanking
+  if (!file_sequence.randomize() with { num_frames == 2; })
+    `uvm_fatal("RAND", "video file sequence randomization failed")
+  file_sequence.start(env.master_agent.sequencer);
+
+  env.scoreboard.wait_until_drained(.timeout_cycles(5000));
+
+  // ---------------------------------------------------------------------
+  // STEP D -- check what came back out of the DUT.
+  //
+  // compare() is a plain UVM object compare: geometry first, then every
+  // pixel masked to the format's real precision. A frame that was
+  // re-paced or re-blocked on the way through still compares equal,
+  // because the beat structure is not part of the frame.
+  // ---------------------------------------------------------------------
+  if (env.frame_collector.received_frames.size() != 2)
+    `uvm_error("VIDEO", $sformatf("expected 2 frames back, got %0d",
+                                  env.frame_collector.received_frames.size()))
+
+  foreach (env.frame_collector.received_frames[f]) begin
+    axi_stream_video_frame received = env.frame_collector.received_frames[f];
+    if (!sent_frame.compare(received)) begin
+      int diff = sent_frame.first_difference(received);
+      `uvm_error("VIDEO", $sformatf("frame %0d came back changed (first difference at pixel %0d)",
+                                    f, diff))
+    end
+    else begin
+      `uvm_info("VIDEO", $sformatf("frame %0d matches: %s", f, received.convert2string()), UVM_LOW)
+    end
+  end
+
+  // Dumping what came off the wire is often the quickest way to see what
+  // a DUT did to a frame: open the .ppm in any image viewer, or diff the
+  // .hex against the input by eye.
+  if (env.frame_collector.received_frames.size() > 0) begin
+    void'(env.frame_collector.received_frames[0].save_hex("received_frame.hex"));
+    void'(env.frame_collector.received_frames[0].save_pnm("received_frame.ppm"));
+  end
+
+  // ---------------------------------------------------------------------
+  // STEP E -- the same thing without a file, for a test that should not
+  //           depend on one. The built-in patterns are RAMP, BARS,
+  //           CHECKER, INDEX and RANDOM.
+  // ---------------------------------------------------------------------
+  env.frame_collector.received_frames.delete();
+  env.frame_collector.expected_width  = 16;
+  env.frame_collector.expected_height = 8;
+
+  pattern_sequence = axi_stream_video_pattern_seq::type_id::create("pattern_sequence");
+  pattern_sequence.video_format = video_format;
+  pattern_sequence.pattern      = AXIS_PATTERN_BARS;
+  if (!pattern_sequence.randomize() with { frame_width == 16; frame_height == 8;
+                                           num_frames == 1; })
+    `uvm_fatal("RAND", "video pattern sequence randomization failed")
+  pattern_sequence.start(env.master_agent.sequencer);
+
+  env.scoreboard.wait_until_drained(.timeout_cycles(5000));
+
+  if (env.frame_collector.received_frames.size() != 1)
+    `uvm_error("VIDEO", $sformatf("expected 1 pattern frame back, got %0d",
+                                  env.frame_collector.received_frames.size()))
+  else if (!pattern_sequence.frame.compare(env.frame_collector.received_frames[0]))
+    `uvm_error("VIDEO", "the generated pattern frame came back changed")
+  else
+    `uvm_info("VIDEO", "the generated pattern frame matches", UVM_LOW)
+
+  phase.drop_objection(this, "video frames complete");
+endtask : run_phase

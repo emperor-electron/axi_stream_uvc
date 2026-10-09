@@ -19,6 +19,8 @@
 #   axi_stream_no_ready_test      TREADY held low, then released
 #   axi_stream_sparse_test        null/position byte payloads
 #   axi_stream_reset_test         ARESETn pulsed mid-traffic
+#   axi_stream_video_test         video frames, every pixel format and PPC
+#   axi_stream_video_file_test    frames read from images/ and written back
 #   make regress                  runs all of the above in turn
 #
 # The UVC itself is compiled through $(UVC_FILELIST) -- the same drop-in
@@ -105,7 +107,8 @@ endif
 
 REGRESS_TESTS ?= axi_stream_smoke_test axi_stream_multiwidth_test \
                  axi_stream_backpressure_test axi_stream_no_ready_test \
-                 axi_stream_sparse_test axi_stream_reset_test
+                 axi_stream_sparse_test axi_stream_reset_test \
+                 axi_stream_video_test axi_stream_video_file_test
 
 CHECK_TOP      ?= axi_stream_if_check_tb
 CHECK_SNAPSHOT ?= $(CHECK_TOP)_snap
@@ -207,11 +210,15 @@ regress: elab
 	echo; echo "regression $$([ $$rc -eq 0 ] && echo PASSED || echo FAILED)"; \
 	exit $$rc
 
-# Note what is *not* removed: *.wcfg. A saved waveform arrangement is
-# hand-made and is not a build artifact, so `make clean` leaves it alone.
+# Note what is *not* removed: *.wcfg, and anything under images/. A saved
+# waveform arrangement is hand-made and is not a build artifact, and the
+# images are test inputs, so `make clean` leaves both alone. The
+# received_* files are frames axi_stream_video_file_test wrote out, which
+# are artifacts.
 clean:
 	rm -rf xsim.dir *.wdb *.jou *.log *.pb webtalk* .Xil
 	rm -f $(SNAPSHOT).* $(CHECK_SNAPSHOT).*
+	rm -f received_*.hex received_*.ppm received_*.pgm
 
 help:
 	@echo "Targets:"

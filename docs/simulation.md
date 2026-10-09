@@ -107,11 +107,14 @@ unchanged and in order.
 | `axi_stream_no_ready_test` | TREADY held low 300 cycles, then released |
 | `axi_stream_sparse_test` | null and position byte payloads |
 | `axi_stream_reset_test` | ARESETn pulsed mid-traffic, then recovery |
+| `axi_stream_video_test` | [video frames](video.md) at every pixel format and pixels-per-clock the UVC supports |
+| `axi_stream_video_file_test` | every file under `tb/images/`, read, sent, and written back out |
 
-All six pass on five seeds (1, 7, 42, 12345, 99999) with zero protocol
-assertion failures across all ten interfaces, and `make check-protocol` reports
-11 of 11 scenarios behaving correctly — so the assertions are known to be alive
-rather than merely silent. See [Protocol checks](protocol-checks.md).
+All eight pass on five seeds (1, 7, 42, 12345, 99999) — 40 runs, zero failures
+— with zero protocol assertion failures across all ten interfaces, and
+`make check-protocol` reports 11 of 11 scenarios behaving correctly, so the
+assertions are known to be alive rather than merely silent. See
+[Protocol checks](protocol-checks.md).
 
 ## The example
 
@@ -123,6 +126,19 @@ and copied.
 | `example_base_test` | random packets, 60% random backpressure |
 | `example_backpressure_test` | burst backpressure and a bursty source |
 | `example_directed_test` | a specific 21-byte payload on an 8-byte link |
+| `example_video_test` | a video frame from `example/images/frame_8x4.hex`, two pixels per clock |
+
+### Files the video tests write
+
+`axi_stream_video_file_test` writes the frames it received back out, as
+`received_*.hex`, `received_*.ppm` and `received_*.pgm`, and reads them in again
+to prove the writers round-trip. `example_video_test` writes
+`received_frame.hex` and `received_frame.ppm` for you to look at. `make clean`
+removes all of them; it leaves `images/` alone, since those are test inputs.
+
+Open a written `.ppm` in any image viewer to see what the DUT did to a frame, or
+diff a written `.hex` against the input by eye. See
+[Image files](image-files.md#writing-frames-out).
 
 ## Adding sources
 

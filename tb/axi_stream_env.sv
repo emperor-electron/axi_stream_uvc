@@ -30,6 +30,12 @@ virtual class axi_stream_env_base extends uvm_env;
   axi_stream_sequencer  master_sequencer;   // published by the parameterized subclass
   axi_stream_scoreboard scoreboard;
 
+  // Frame-level view of the same two links, for the video tests. Both
+  // sit here on every link and stay inert until a test gives them a
+  // video_format, so a non-video test pays nothing for them.
+  axi_stream_video_frame_collector source_frame_collector;  // link into the DUT
+  axi_stream_video_frame_collector sink_frame_collector;    // link out of the DUT
+
   // Human-readable link name, e.g. "16B/ID8/DEST8/USER16", used in log
   // lines so a failure names the link it came from.
   string link_desc = "";
@@ -48,6 +54,13 @@ virtual class axi_stream_env_base extends uvm_env;
 
   // Convenience for tests: reprogram this link's source-side pacing.
   extern virtual function void set_pacing(int unsigned min_cycles, int unsigned max_cycles);
+
+  // Convenience for tests: switch both frame collectors on. A width or
+  // height of 0 leaves that one derived -- see
+  // axi_stream_video_frame_collector for what each choice costs.
+  extern virtual function void set_video_format(axi_stream_video_format video_format,
+                                                int unsigned expected_width  = 0,
+                                                int unsigned expected_height = 0);
 
 endclass : axi_stream_env_base
 
@@ -69,6 +82,10 @@ function void axi_stream_env_base::build_phase(uvm_phase phase);
     slave_config.role = AXIS_SLAVE;
   end
   scoreboard = axi_stream_scoreboard::type_id::create("scoreboard", this);
+  source_frame_collector = axi_stream_video_frame_collector::type_id::create(
+                               "source_frame_collector", this);
+  sink_frame_collector   = axi_stream_video_frame_collector::type_id::create(
+                               "sink_frame_collector", this);
 endfunction : build_phase
 
 function void axi_stream_env_base::set_backpressure(axi_stream_ready_mode_e mode,
@@ -85,6 +102,17 @@ endfunction : set_backpressure
 function void axi_stream_env_base::set_pacing(int unsigned min_cycles, int unsigned max_cycles);
   master_config.set_beat_delay(min_cycles, max_cycles);
 endfunction : set_pacing
+
+function void axi_stream_env_base::set_video_format(axi_stream_video_format video_format,
+                                                    int unsigned expected_width  = 0,
+                                                    int unsigned expected_height = 0);
+  source_frame_collector.video_format    = video_format;
+  source_frame_collector.expected_width  = expected_width;
+  source_frame_collector.expected_height = expected_height;
+  sink_frame_collector.video_format      = video_format;
+  sink_frame_collector.expected_width    = expected_width;
+  sink_frame_collector.expected_height   = expected_height;
+endfunction : set_video_format
 
 
 ///////////////////////////////////////////////////////////////////
@@ -159,4 +187,11 @@ function void axi_stream_env::connect_phase(uvm_phase phase);
   slave_agent.monitor.beat_analysis_port.connect(scoreboard.sink_beat_export);
   master_agent.monitor.packet_analysis_port.connect(scoreboard.source_packet_export);
   slave_agent.monitor.packet_analysis_port.connect(scoreboard.sink_packet_export);
+
+  // The frame collectors ride on the same beat streams. They rebuild
+  // frames from TLAST and TUSER[0] alone, so they need nothing from the
+  // sequence that produced the traffic -- the sink-side one would work
+  // just as well against a DUT that generated the video itself.
+  master_agent.monitor.beat_analysis_port.connect(source_frame_collector.analysis_export);
+  slave_agent.monitor.beat_analysis_port.connect(sink_frame_collector.analysis_export);
 endfunction : connect_phase

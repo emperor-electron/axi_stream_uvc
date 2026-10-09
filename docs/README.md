@@ -20,6 +20,8 @@ axi_stream_agent #(.DATA_BYTES(8), .ID_WIDTH(4), .DEST_WIDTH(4), .USER_WIDTH(8))
 | Configure an agent | [Configuration](configuration.md) |
 | Backpressure a DUT and see it cope | [Backpressure](backpressure.md) |
 | Send traffic | [Sequences](sequences.md) |
+| Send video frames | [Video](video.md) |
+| Read a frame from a file | [Image files](image-files.md) |
 | Know what the UVC checks for you | [Protocol checks](protocol-checks.md) |
 | Understand or extend the component | [Architecture](architecture.md) |
 | Run the tests, capture waveforms | [Simulation](simulation.md) |
@@ -54,6 +56,13 @@ parameters, never `` `define ``s, so a testbench can hold a 4-byte link and a
 16-byte link side by side. The transaction sizes itself at run time, which means
 one sequence library and one scoreboard serve every width.
 
+**Video frames, with the Xilinx sideband mapping.** TUSER[0] is SOF and TLAST is
+EOL, so a frame goes out as lines of pixels the way Xilinx video IP expects.
+RGBA at 8, 10, 12 and 16 bits per component, one to many pixels per clock, and
+frames read from PGM, PPM or a plain ASCII hex file you can edit by hand. A
+frame collector rebuilds frames off the wire, so checking a video DUT is a plain
+object compare. See [Video](video.md) and [Image files](image-files.md).
+
 **One interface file for RTL and verification.** `axi_stream_if.sv` is both the
 UVC's virtual interface and an interface you can instantiate inside a design —
 everything unsynthesizable sits behind `` `ifdef AXI_STREAM_IF_SIM ``.
@@ -75,4 +84,5 @@ docs/       you are here
 src/        the UVC -- the only thing another project compiles
 example/    a runnable integration example, written to be read
 tb/         the UVC's own self-test: five link widths in one simulation
+tb/images/  test frames the video file tests read
 ```

@@ -4,8 +4,9 @@ A reusable UVM verification component for AMBA AXI4-Stream (ARM IHI 0051A),
 scaffolded with [uvm-tb](../uvm-tb) and built out into a full UVC.
 
 It drives either end of a stream, applies programmable backpressure, polices the
-protocol with assertions that are themselves tested, and works at any TDATA
-width without a single compile-time definition.
+protocol with assertions that are themselves tested, sends video frames using
+the Xilinx SOF/EOL sideband mapping, and works at any TDATA width without a
+single compile-time definition.
 
 ## Documentation
 
@@ -17,6 +18,8 @@ width without a single compile-time definition.
 | [Configuration](docs/configuration.md) | the `axi_stream_config` reference |
 | [Backpressure](docs/backpressure.md) | ready models, and writing your own |
 | [Sequences](docs/sequences.md) | the stimulus library |
+| [Video](docs/video.md) | video frames, pixel formats, pixels per clock |
+| [Image files](docs/image-files.md) | reading frames from PGM, PPM and ASCII hex |
 | [Protocol checks](docs/protocol-checks.md) | what is asserted, and proof it fires |
 | [Architecture](docs/architecture.md) | how it is built, and how to extend it |
 | [Simulation](docs/simulation.md) | make targets, tests, waveforms |
@@ -44,6 +47,7 @@ docs/       documentation -- start here
 src/        the UVC; the only thing another project compiles
 example/    a runnable integration example, written to be read
 tb/         the UVC's self-test: five link widths in one simulation
+tb/images/  test frames the video file tests read
 ```
 
 ## Requirements

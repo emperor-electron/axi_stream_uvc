@@ -54,6 +54,12 @@ A link with `has_tkeep = 0` behaves as though every byte were kept; one with
 both, which is what lets a scoreboard compare links that carry different
 optional signals.
 
+For [video](video.md), TUSER and TLAST stop being optional in practice: SOF
+rides on TUSER[0] and EOL on TLAST, so a link without them can carry the pixels
+but not the framing. The video layer degrades rather than refusing, and says
+which framing it had to drop — see
+[Links without TUSER or TKEEP](video.md#links-without-tuser-or-tkeep).
+
 ### Pacing and backpressure
 
 | Field | Default | Meaning |

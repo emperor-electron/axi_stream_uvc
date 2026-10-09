@@ -19,6 +19,7 @@ virtual interface, and stops there:
 | `axi_stream_slave_driver` | `axi_stream_sequencer` |
 | `axi_stream_monitor` | the whole sequence library |
 | `axi_stream_agent` (holds the three above) | `axi_stream_coverage` |
+| | the whole video layer |
 
 **The agent is the seam.** Below it, three components hold a virtual interface.
 Above it, nothing does — so stimulus, checking and coverage are written once and
@@ -49,7 +50,21 @@ src/
   axi_stream_agent.sv          where parameterized meets unparameterized
   axi_stream_seq_lib.sv        beat / packet / payload / sparse / random
   axi_stream_pkg.sv            the package; includes the above in dependency order
+
+  the video layer -- see docs/video.md:
+  axi_stream_video_types.sv            pixel typedefs, colorspaces, patterns
+  axi_stream_video_format.sv           pixel layout, and all the bit packing
+  axi_stream_video_frame.sv            a frame, comparable, with test patterns
+  axi_stream_image_file.sv             PGM / PPM / ASCII hex readers and writers
+  axi_stream_video_frame_collector.sv  rebuilds frames from a monitor's beats
+  axi_stream_video_seq_lib.sv          frame / file / pattern sequences
 ```
+
+The video layer is unparameterized throughout, for the same reason as everything
+else above the agent: it deals in frames and formats, and never touches a
+virtual interface. A frame is turned into ordinary `axi_stream_seq_item` beats,
+so the drivers, the monitor, the assertions and the scoreboard are the same ones
+all other traffic uses -- which is why adding it changed none of them.
 
 ### The agent
 
